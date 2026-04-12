@@ -440,6 +440,7 @@ graph TD
 完整原始数据附录：
 - [02a — Base Instructions 原文](02-appendix/02a-system-prompt-full.md)（14,732 字符）
 - [02b — Developer Message 原文](02-appendix/02b-developer-message-full.md)（10,132 字符，4 个 Block）
+- [02d — 完整消息示例 JSON](02-appendix/02d-example-messages.json)（第 3 轮请求/响应，含 10 条 input messages + LLM 回复）
 
 ---
 

@@ -390,6 +390,7 @@
       { id: '02', file: 'wiki/02-prompt-and-tools.md', title: '提示词与工具', section: '基础' },
       { id: '02a', file: 'wiki/02-appendix/02a-system-prompt-full.md', title: 'Base Instructions 原文', section: '基础', sub: true },
       { id: '02b', file: 'wiki/02-appendix/02b-developer-message-full.md', title: 'Developer Message 原文', section: '基础', sub: true },
+      { id: '02d', file: 'wiki/02-appendix/02d-example-messages.json', title: '完整消息示例 (JSON)', section: '基础', sub: true },
       { id: '03', file: 'wiki/03-agent-loop.md', title: 'Agent Loop', section: '核心' },
       { id: '04', file: 'wiki/04-tool-system.md', title: '工具系统', section: '核心' },
       { id: '05', file: 'wiki/05-context-management.md', title: '上下文管理', section: '核心' },
@@ -468,8 +469,14 @@
           content.innerHTML = `<div class="empty-state"><h3>${page.title}</h3><p>尚未编写</p></div>`;
           return;
         }
-        content.innerHTML = marked.parse(await res.text());
-        await mermaid.run({ nodes: content.querySelectorAll('.mermaid') });
+        const text = await res.text();
+        if (page.file.endsWith('.json')) {
+          const pretty = JSON.stringify(JSON.parse(text), null, 2);
+          content.innerHTML = `<h1>${page.title}</h1><pre><code class="language-json">${pretty.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code></pre>`;
+        } else {
+          content.innerHTML = marked.parse(text);
+          await mermaid.run({ nodes: content.querySelectorAll('.mermaid') });
+        }
         window.scrollTo(0, 0);
       } catch (e) {
         content.innerHTML = `<div class="empty-state"><h3>加载失败</h3><p>${e.message}</p></div>`;
