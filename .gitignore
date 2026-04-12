@@ -2,5 +2,12 @@
 .playwright-mcp/
 .screenshots/
 
+# Captured API data (may contain tokens/sensitive info)
+diagrams/todomvc-capture/*.json
+diagrams/todomvc-capture/*.txt
+
+# Temp task outputs
+tmp-todomvc/
+
 # OS
 .DS_Store

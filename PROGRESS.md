@@ -78,3 +78,21 @@
 - **状态调整**:
   - 第 01 章设为 `DRAFT`
 - **下一步**: 用户 review 第 01 章 → 然后进入第 02 章「Agent Loop 深度剖析」
+
+### Round 4 (2026-04-12)
+- **目标**: 抓取 Codex 执行真实任务的完整 API 数据，为第 02 章准备素材
+- **完成**:
+  - [x] 编写 Node.js 转发代理脚本 (`scripts/capture-proxy.mjs`)
+  - [x] 通过 `codex debug prompt-input` 获取完整初始 prompt（14,732 字符 base instructions）
+  - [x] 用户在终端运行 TODOMVC 任务，从 rollout JSONL 提取完整对话数据
+  - [x] 解析并整理抓取数据到 `diagrams/todomvc-capture/`
+- **产出**:
+  - `scripts/capture-proxy.mjs` — Node.js API 转发代理（可选工具）
+  - `diagrams/todomvc-capture/README.md` — 数据说明和对话流程摘要
+  - `diagrams/todomvc-capture/*.json` / `*.txt` — 提取的 prompt、对话、turn context 等（已 gitignore）
+- **关键发现**:
+  - Codex 优先使用 WebSocket 连接 (`ws://`), HTTP SSE 是回退方案
+  - ChatGPT 登录 token 权限与 API key 不同，走代理时 API 写入可能受限
+  - `codex debug prompt-input` + rollout JSONL 组合是最实用的零编译数据获取方案
+  - 完整 prompt 包含 3 层：base_instructions (14K) + developer 消息 (permissions/skills/plugins 20K) + user 上下文 (AGENTS.md 3.6K)
+- **下一步**: 下一轮对话中基于抓取数据 + 源码分析编写第 02 章「Agent Loop 深度剖析」
