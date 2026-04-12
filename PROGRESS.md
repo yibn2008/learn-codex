@@ -24,9 +24,9 @@
 | 05 | `wiki/05-context-management.md` | 上下文与对话管理 | DRAFT | ContextManager、差分更新、压缩、Token 估算 |
 | 06 | `wiki/06-sub-agent-system.md` | 子 Agent 与任务委派 | DRAFT | AgentControl、Mailbox、v2 工具、审批委托 |
 | 07 | `wiki/07-approval-safety.md` | 审批与安全系统 | DRAFT | 三层架构、ExecPolicy、Guardian、Sandbox、网络 |
-| 08 | `wiki/08-api-model-interaction.md` | API 与模型交互 | NOT_STARTED | 客户端、流式传输、多供应商 |
-| 09 | `wiki/09-sdk-protocol.md` | SDK 与协议 | NOT_STARTED | Op/Event、JSON-RPC、SDK |
-| 10 | `wiki/10-config-system.md` | 配置系统 | NOT_STARTED | 配置分层、Feature flags |
+| 08 | `wiki/08-api-model-interaction.md` | API 与模型交互 | DRAFT | 双级客户端、WebSocket/SSE、多供应商 |
+| 09 | `wiki/09-sdk-protocol.md` | SDK 与协议 | DRAFT | Op/Event 协议、App Server、TS/Python SDK |
+| 10 | `wiki/10-config-system.md` | 配置系统 | DRAFT | 分层合并、Feature Flags、权限配置 |
 
 > 状态定义：NOT_STARTED → IN_PROGRESS → DRAFT → REVIEW → DONE
 
