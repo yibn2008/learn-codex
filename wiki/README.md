@@ -1,41 +1,75 @@
 # Codex AI Agent 源码深度解析
 
-> 本 Wiki 深入分析 [OpenAI Codex CLI](https://github.com/openai/codex) 的源码，聚焦其 AI Agent 的核心工作机制。
+> 本 Wiki 深入分析 [OpenAI Codex CLI](https://github.com/openai/codex) 的源码，以一个真实的 TODOMVC 任务为线索，完整拆解这个生产级 AI Agent 的工作机制。
 
 ## 阅读导航
 
-### 基础篇
+### 基础篇 — 建立全局认知
 
-| 章节 | 内容概要 |
+| 章节 | 你将了解 |
 |------|---------|
-| [00 - 项目全景概览](00-project-overview.md) | Codex 是什么？项目结构、技术栈、Crate 全景、入口链路追踪 |
-| [01 - 架构总览](01-architecture-overview.md) | 四层架构设计、核心抽象、Session 生命周期、数据流全貌 |
+| [00 - 项目全景概览](00-project-overview.md) | Codex 是什么？88 个 Rust Crate 的分层结构、TypeScript + Rust 的启动链路 |
+| [01 - 架构总览](01-architecture-overview.md) | 四层架构（表示层→会话管理→Agent 核心→能力层）、6 个核心抽象、Op/Event 协议 |
+| [02 - 提示词与工具解析](02-prompt-and-tools.md) | 通过真实抓包数据，逐层拆解发给 LLM 的完整请求：instructions + tools + messages |
 
-### 核心篇 — AI Agent 工作机制
+### 核心篇 — Agent 如何工作
 
-| 章节 | 内容概要 |
+| 章节 | 你将了解 |
 |------|---------|
-| [02 - Agent Loop 深度剖析](02-agent-loop.md) | Turn 主循环、采样请求、流式处理、任务状态机 |
-| [03 - 工具系统设计](03-tool-system.md) | 工具四层架构、分发与执行、并行调用、沙箱集成 |
-| [04 - 上下文与对话管理](04-context-management.md) | 对话历史管理、Token 追踪、自动压缩、上下文窗口优化 |
-| [05 - 子 Agent 与任务委派](05-sub-agent-system.md) | 多 Agent 架构、信箱通信、Agent 编排、任务委托 |
-| [06 - 审批与安全系统](06-approval-safety.md) | 三层安全架构、执行策略、Guardian AI 审查、OS 沙箱 |
+| [03 - Agent Loop 深度剖析](03-agent-loop.md) | `run_turn()` 主循环的源码级解读：采样→工具执行→压缩→Stop Hooks |
+| [04 - 工具系统设计](04-tool-system.md) | 工具从解析到执行的 5 阶段管线：Router→Runtime→Registry→Orchestrator→Handler |
+| [05 - 上下文与对话管理](05-context-management.md) | ContextManager、差分更新、Token 估算、Pre-turn/Mid-turn 自动压缩 |
+| [06 - 子 Agent 与任务委派](06-sub-agent-system.md) | AgentControl 生命周期、Mailbox 异步通信、角色系统、审批委托 |
+| [07 - 审批与安全系统](07-approval-safety.md) | 三层安全架构：ExecPolicy 规则→Guardian AI 审查→OS 沙箱隔离 |
 
 ### 外围篇 — 支撑系统
 
-| 章节 | 内容概要 |
+| 章节 | 你将了解 |
 |------|---------|
-| [07 - API 与模型交互](07-api-model-interaction.md) | 模型客户端、SSE/WebSocket 双传输、多供应商支持 |
-| [08 - 提示工程](08-prompt-engineering.md) | 系统消息构造、模板系统、动态上下文注入 |
-| [09 - SDK 与协议](09-sdk-protocol.md) | Op/Event 协议、JSON-RPC、TypeScript/Python SDK |
-| [10 - 配置系统](10-config-system.md) | 配置分层合并、Feature Flags、权限与沙箱策略 |
+| [08 - API 与模型交互](08-api-model-interaction.md) | 双级客户端、WebSocket/SSE 传输层、多供应商适配 |
+| [09 - SDK 与协议](09-sdk-protocol.md) | 三层协议（内部 Op/Event + 公开 JSON-RPC + CLI JSONL）、App Server |
+| [10 - 配置系统](10-config-system.md) | 值层 vs 约束层、Feature Flags、沙箱策略、审批预设 |
 
-## 关于本项目
+## 项目概况
 
-本 Wiki 基于对 Codex 源码的逐行分析编写，旨在帮助读者理解一个**生产级 AI Agent** 的完整设计。
+```
+OpenAI Codex CLI — 运行在本地的编码 AI Agent
 
-- **源码版本**: 基于 [openai/codex](https://github.com/openai/codex) 主分支
-- **技术栈**: TypeScript (入口包装) + Rust (核心引擎) + Python/TypeScript SDK
-- **项目规模**: 89 个 Rust Crate，约 1,400+ 个 Rust 源文件
+技术栈    TypeScript (入口) + Rust (核心引擎) + Python/TS SDK
+代码规模  88 个 Rust Crate，1,418 个 .rs 文件
+核心文件  codex.rs — 7,931 行（Agent 主循环）
+支持平台  macOS / Linux / Windows (arm64 + x64)
+运行模式  交互式 TUI、非交互 Exec、App Server (IDE)、MCP Server
+```
 
-> **Rust 知识点说明**: 本 Wiki 面向所有开发者，不要求 Rust 背景。遇到 Rust 特有概念时，会以内联小贴士的形式讲解。
+## 本 Wiki 覆盖情况
+
+基于源码中 `use` 引用频次排序的前 25 个核心 Crate，本 Wiki 覆盖了其中 **21 个（84%）**。未覆盖的 4 个均为工具库或平台特定实现，不影响对 AI Agent 核心机制的理解。
+
+```
+✅ 已覆盖 (21)    codex-protocol, app-server-protocol, core, config,
+                   login, features, otel, api, tools, exec-server,
+                   execpolicy, model-provider-info, sandboxing, mcp,
+                   client, execpolicy-legacy, models-manager, state,
+                   exec, analytics, network-proxy
+
+❌ 未覆盖 (4)     utils/absolute-path, windows-sandbox, git-utils,
+                   utils/output-truncation
+```
+
+## 如何阅读
+
+- **快速了解**：只读第 00 和 01 章，建立全局认知
+- **理解 Agent 原理**：按顺序读 02→07，从提示词到安全系统逐层深入
+- **查阅特定主题**：通过右侧目录直接跳转到感兴趣的章节
+
+> **Rust 知识点**：本 Wiki 面向所有开发者，不要求 Rust 背景。遇到 `Arc<T>`、`trait`、`async/await` 等概念时，会以内联小贴士讲解。
+
+## 数据来源
+
+本 Wiki 的分析基于两类数据：
+
+1. **源码静态分析** — 对 [openai/codex](https://github.com/openai/codex) 主分支的逐文件阅读
+2. **运行时抓包** — 通过自定义 `model_provider`（`supports_websockets=false`）+ 代理抓取的完整 API 请求/响应（[查看完整请求数据](02-appendix/02-full-request-annotated.md)）
+
+每个章节都经过 Codex adversarial review 核对源码事实。
