@@ -16,7 +16,7 @@
 | - | `wiki/README.md` | Wiki 首页 | DRAFT | 导航中心 |
 | 00 | `wiki/00-project-overview.md` | 项目全景概览 | REVIEW | 项目结构、技术栈、入口链路 |
 | 01 | `wiki/01-architecture-overview.md` | 架构总览 | DRAFT | 四层架构、核心抽象、数据流 |
-| 02 | `wiki/02-agent-loop.md` | Agent Loop 深度剖析 | NOT_STARTED | run_turn、采样、流式处理 |
+| 02 | `wiki/02-agent-loop.md` | Agent Loop 深度剖析 | DRAFT | run_turn、采样、真实任务串讲 |
 | 03 | `wiki/03-tool-system.md` | 工具系统设计 | NOT_STARTED | 工具分发、执行、沙箱 |
 | 04 | `wiki/04-context-management.md` | 上下文与对话管理 | NOT_STARTED | 历史管理、压缩、Token |
 | 05 | `wiki/05-sub-agent-system.md` | 子 Agent 与任务委派 | NOT_STARTED | 多 Agent、信箱、编排 |
@@ -96,3 +96,14 @@
   - `codex debug prompt-input` + rollout JSONL 组合是最实用的零编译数据获取方案
   - 完整 prompt 包含 3 层：base_instructions (14K) + developer 消息 (permissions/skills/plugins 20K) + user 上下文 (AGENTS.md 3.6K)
 - **下一步**: 下一轮对话中基于抓取数据 + 源码分析编写第 02 章「Agent Loop 深度剖析」
+
+### Round 5 (2026-04-12)
+- **目标**: 基于真实 TODOMVC 任务数据 + 源码分析，编写第 02 章
+- **完成**:
+  - [x] 深入阅读 run_turn、run_sampling_request、tool spec、client_common 等源码
+  - [x] 结合抓取的 13 步对话数据，编写 wiki/02-agent-loop.md
+- **产出**:
+  - `wiki/02-agent-loop.md` — 8 个章节：真实任务旅程（时序图）、Prompt 三层结构（base instructions / developer / user context）、Turn 主循环（run_turn 流程图）、采样请求五步流程、工具调用生命周期、Turn Context 真实数据、自动压缩机制、小结
+- **状态调整**:
+  - 第 02 章设为 `DRAFT`
+- **下一步**: 用户 review 第 02 章 → 然后进入第 03 章「工具系统设计」
