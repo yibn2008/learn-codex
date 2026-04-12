@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Codex 源码解析</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #faf9f7;
+      --bg-surface: #f0efec;
+      --bg-code: #f5f4f1;
+      --border: #e5e3de;
+      --border-strong: #d5d3cd;
+      --text: #3b3a36;
+      --text-strong: #1a1918;
+      --text-dim: #6e6c66;
+      --text-faint: #9e9b93;
+      --accent: #8b6b2e;
+      --accent-dim: rgba(139,107,46,0.07);
+      --sidebar-w: 240px;
+      --content-w: 740px;
+      --font-body: 'Inter', 'Noto Serif SC', -apple-system, sans-serif;
+      --font-heading: 'Noto Serif SC', 'Inter', serif;
+      --font-mono: 'IBM Plex Mono', monospace;
+    }
+
+    html { font-size: 15px; scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.8;
+      display: flex;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      min-width: var(--sidebar-w);
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 10;
+      overflow-y: auto;
+      padding: 32px 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+    }
+    .sidebar-title {
+      padding: 0 24px;
+      margin-bottom: 40px;
+    }
+    .sidebar-title h1 {
+      font-family: var(--font-heading);
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-strong);
+      line-height: 1.5;
+    }
+    .sidebar-title small {
+      display: block;
+      font-family: var(--font-body);
+      font-size: 0.7rem;
+      color: var(--text-faint);
+      margin-top: 6px;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+    }
+    .nav-group { margin-bottom: 4px; }
+    .nav-label {
+      font-size: 0.65rem;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      padding: 18px 24px 6px;
+    }
+    .nav-item {
+      display: block;
+      padding: 5px 24px;
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: color 0.15s;
+      line-height: 1.5;
+    }
+    .nav-item:hover { color: var(--text-strong); }
+    .nav-item.active {
+      color: var(--text-strong);
+      font-weight: 500;
+      position: relative;
+    }
+    .nav-item.active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 4px; bottom: 4px;
+      width: 2px;
+      background: var(--accent);
+    }
+
+    /* ── Main ── */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      min-height: 100vh;
+      border-left: 1px solid var(--border);
+    }
+    .content-area {
+      max-width: var(--content-w);
+      margin: 0 auto;
+      padding: 64px 48px 120px;
+    }
+
+    /* ── Markdown ── */
+    .content h1 {
+      font-family: var(--font-heading);
+      font-size: 1.7rem;
+      font-weight: 700;
+      color: var(--text-strong);
+      letter-spacing: -0.01em;
+      line-height: 1.4;
+      margin-bottom: 12px;
+    }
+    .content h1 + blockquote {
+      margin-top: 0;
+      border: none;
+      padding: 0;
+      background: none;
+    }
+    .content h1 + blockquote p {
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      margin-bottom: 48px;
+      font-style: italic;
+    }
+    .content h2 {
+      font-family: var(--font-heading);
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text-strong);
+      margin-top: 64px;
+      margin-bottom: 20px;
+      line-height: 1.4;
+    }
+    .content h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-strong);
+      margin-top: 40px;
+      margin-bottom: 12px;
+    }
+    .content h4 {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 28px;
+      margin-bottom: 8px;
+    }
+    .content p { margin-bottom: 18px; }
+
+    .content > blockquote {
+      border-left: 2px solid var(--accent);
+      padding: 14px 20px;
+      margin: 24px 0;
+      background: var(--accent-dim);
+      border-radius: 0 4px 4px 0;
+    }
+    .content blockquote p {
+      margin-bottom: 6px;
+      font-size: 0.9rem;
+    }
+    .content blockquote p:last-child { margin-bottom: 0; }
+    .content blockquote strong { color: var(--accent); font-weight: 600; }
+
+    .content ul, .content ol { margin: 0 0 18px 18px; }
+    .content li { margin-bottom: 6px; }
+    .content li > ul, .content li > ol { margin-top: 6px; margin-bottom: 0; }
+
+    .content a {
+      color: var(--accent);
+      text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    .content a:hover { text-decoration: underline; }
+
+    .content code {
+      font-family: var(--font-mono);
+      font-size: 0.82em;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--text-strong);
+    }
+    .content pre {
+      margin: 20px 0;
+      border-radius: 6px;
+      overflow-x: auto;
+      background: #2a2926;
+    }
+    .content pre code {
+      display: block;
+      padding: 18px 20px;
+      background: none;
+      border: none;
+      color: #e0ded8;
+      font-size: 0.8rem;
+      line-height: 1.7;
+      border-radius: 0;
+    }
+
+    .content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 0.85rem;
+    }
+    .content thead th {
+      text-align: left;
+      padding: 10px 16px;
+      border-bottom: 2px solid var(--border-strong);
+      font-weight: 600;
+      color: var(--text-strong);
+      font-size: 0.78rem;
+      letter-spacing: 0.02em;
+    }
+    .content tbody td {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .content tbody tr:hover { background: var(--accent-dim); }
+
+    .content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 48px 0;
+    }
+    .content strong { color: var(--text-strong); font-weight: 600; }
+    .content img { max-width: 100%; border-radius: 4px; margin: 8px 0; }
+
+    /* ── Mermaid ── */
+    .content .mermaid-wrap {
+      margin: 28px 0;
+      padding: 24px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      text-align: center;
+      overflow-x: auto;
+      position: relative;
+      cursor: zoom-in;
+    }
+    .mermaid-wrap .zoom-hint {
+      position: absolute;
+      top: 8px; right: 10px;
+      font-size: 0.68rem;
+      color: var(--text-faint);
+      pointer-events: none;
+    }
+
+    /* ── Lightbox for diagrams ── */
+    .lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(6px);
+      cursor: zoom-out;
+      overflow: auto;
+      padding: 32px;
+    }
+    .lightbox.open { display: flex; align-items: flex-start; justify-content: center; }
+    .lightbox-inner {
+      background: #fff;
+      border-radius: 8px;
+      padding: 40px;
+      margin: auto;
+      overflow: auto;
+      cursor: default;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    }
+    .lightbox-inner svg {
+      display: block;
+    }
+
+    /* ── Loading / empty ── */
+    .loading {
+      color: var(--text-faint);
+      padding: 120px 0;
+      text-align: center;
+      font-size: 0.85rem;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 120px 20px;
+      color: var(--text-faint);
+    }
+    .empty-state h3 {
+      font-family: var(--font-heading);
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+      color: var(--text-dim);
+    }
+    .empty-state p { font-size: 0.85rem; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+
+    /* ── Mobile ── */
+    .mobile-toggle { display: none; }
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        border-right: 1px solid var(--border);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; border-left: none; }
+      .content-area { padding: 32px 20px 80px; }
+      .mobile-toggle {
+        display: block;
+        position: fixed;
+        top: 16px; left: 16px;
+        z-index: 20;
+        background: var(--bg);
+        border: 1px solid var(--border-strong);
+        border-radius: 4px;
+        padding: 8px;
+        cursor: pointer;
+        color: var(--text-dim);
+        line-height: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <button class="mobile-toggle" onclick="toggleSidebar()">
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4.5h14M2 9h14M2 13.5h14"/></svg>
+  </button>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-title">
+      <h1>Codex<br/>源码解析</h1>
+      <small>OpenAI Codex CLI</small>
+    </div>
+    <nav id="nav"></nav>
+  </aside>
+
+  <main class="main">
+    <div class="content-area">
+      <article class="content" id="content">
+        <div class="loading">Loading...</div>
+      </article>
+    </div>
+  </main>
+
+  <!-- Lightbox for zooming diagrams -->
+  <div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+    <div class="lightbox-inner" id="lightboxContent"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <script>
+    const pages = [
+      { id: 'readme', file: 'wiki/README.md', title: '首页', section: '' },
+      { id: '00', file: 'wiki/00-project-overview.md', title: '项目全景概览', section: '基础' },
+      { id: '01', file: 'wiki/01-architecture-overview.md', title: '架构总览', section: '基础' },
+      { id: '02', file: 'wiki/02-agent-loop.md', title: 'Agent Loop', section: '核心' },
+      { id: '03', file: 'wiki/03-tool-system.md', title: '工具系统', section: '核心' },
+      { id: '04', file: 'wiki/04-context-management.md', title: '上下文管理', section: '核心' },
+      { id: '05', file: 'wiki/05-sub-agent-system.md', title: '子 Agent', section: '核心' },
+      { id: '06', file: 'wiki/06-approval-safety.md', title: '审批与安全', section: '核心' },
+      { id: '07', file: 'wiki/07-api-model-interaction.md', title: 'API 交互', section: '外围' },
+      { id: '08', file: 'wiki/08-prompt-engineering.md', title: '提示工程', section: '外围' },
+      { id: '09', file: 'wiki/09-sdk-protocol.md', title: 'SDK 与协议', section: '外围' },
+      { id: '10', file: 'wiki/10-config-system.md', title: '配置系统', section: '外围' },
+    ];
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      themeVariables: {
+        primaryColor: '#e8e4dd',
+        primaryTextColor: '#1a1918',
+        primaryBorderColor: '#c5c1b8',
+        lineColor: '#9e9b93',
+        secondaryColor: '#f0efec',
+        tertiaryColor: '#faf9f7',
+        fontFamily: 'Inter, Noto Serif SC, sans-serif',
+        fontSize: '14px',
+      },
+    });
+
+    const renderer = new marked.Renderer();
+    renderer.code = function({ text, lang }) {
+      if (lang === 'mermaid') {
+        return `<div class="mermaid-wrap" onclick="openLightbox(this)"><span class="zoom-hint">click to zoom</span><div class="mermaid">${text}</div></div>`;
+      }
+      const esc = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<pre><code class="language-${lang || ''}">${esc}</code></pre>`;
+    };
+    renderer.link = function({ href, title, text }) {
+      if (href && href.match(/^\d{2}-.*\.md$/)) {
+        const id = href.match(/^(\d{2})/)[1];
+        return `<a href="#${id}" onclick="loadPage('${id}');return false;">${text}</a>`;
+      }
+      const ext = href && href.startsWith('http') ? ' target="_blank" rel="noopener"' : '';
+      return `<a href="${href}"${ext}>${text}</a>`;
+    };
+    marked.setOptions({ renderer, gfm: true, breaks: false });
+
+    function buildNav() {
+      const nav = document.getElementById('nav');
+      let html = '';
+      let sec = '';
+      for (const p of pages) {
+        if (p.section && p.section !== sec) {
+          sec = p.section;
+          html += `<div class="nav-group"><div class="nav-label">${sec}</div>`;
+        }
+        html += `<a class="nav-item" data-id="${p.id}" onclick="loadPage('${p.id}')">${p.title}</a>`;
+      }
+      if (sec) html += '</div>';
+      nav.innerHTML = html;
+    }
+
+    async function loadPage(id) {
+      const page = pages.find(p => p.id === id);
+      if (!page) return;
+      history.replaceState(null, '', `#${id}`);
+      document.querySelectorAll('.nav-item').forEach(el =>
+        el.classList.toggle('active', el.dataset.id === id)
+      );
+      const content = document.getElementById('content');
+      content.innerHTML = '<div class="loading">Loading...</div>';
+      try {
+        const res = await fetch(page.file);
+        if (!res.ok) {
+          content.innerHTML = `<div class="empty-state"><h3>${page.title}</h3><p>尚未编写</p></div>`;
+          return;
+        }
+        content.innerHTML = marked.parse(await res.text());
+        await mermaid.run({ nodes: content.querySelectorAll('.mermaid') });
+        window.scrollTo(0, 0);
+      } catch (e) {
+        content.innerHTML = `<div class="empty-state"><h3>加载失败</h3><p>${e.message}</p></div>`;
+      }
+      document.getElementById('sidebar').classList.remove('open');
+    }
+
+    function openLightbox(wrapEl) {
+      const svg = wrapEl.querySelector('svg');
+      if (!svg) return;
+      const lb = document.getElementById('lightbox');
+      const inner = document.getElementById('lightboxContent');
+      const clone = svg.cloneNode(true);
+      // Remove fixed dimensions so SVG fills container
+      const vb = clone.getAttribute('viewBox');
+      if (vb) {
+        const [,, vw, vh] = vb.split(/[\s,]+/).map(Number);
+        // Scale to fit viewport with comfortable padding
+        const maxW = window.innerWidth - 120;
+        const maxH = window.innerHeight - 120;
+        const scale = Math.min(maxW / vw, maxH / vh, 3);
+        clone.setAttribute('width', Math.round(vw * scale));
+        clone.setAttribute('height', Math.round(vh * scale));
+      }
+      inner.innerHTML = '';
+      inner.appendChild(clone);
+      lb.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox(e) {
+      if (e.target === e.currentTarget || e.target.closest('.lightbox-inner') === null) {
+        document.getElementById('lightbox').classList.remove('open');
+        document.body.style.overflow = '';
+      }
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.getElementById('lightbox').classList.remove('open');
+        document.body.style.overflow = '';
+      }
+    });
+
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+    }
+
+    buildNav();
+    loadPage(location.hash.replace('#','') || 'readme');
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Playwright test artifacts
+.playwright-mcp/
+.screenshots/
+
+# OS
+.DS_Store
