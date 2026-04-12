@@ -23,7 +23,7 @@
 | 04 | `wiki/04-tool-system.md` | 工具系统设计 | DRAFT | 工具分发、并行控制、审批沙箱 |
 | 05 | `wiki/05-context-management.md` | 上下文与对话管理 | DRAFT | ContextManager、差分更新、压缩、Token 估算 |
 | 06 | `wiki/06-sub-agent-system.md` | 子 Agent 与任务委派 | DRAFT | AgentControl、Mailbox、v2 工具、审批委托 |
-| 07 | `wiki/07-approval-safety.md` | 审批与安全系统 | NOT_STARTED | 策略、Guardian、沙箱 |
+| 07 | `wiki/07-approval-safety.md` | 审批与安全系统 | DRAFT | 三层架构、ExecPolicy、Guardian、Sandbox、网络 |
 | 08 | `wiki/08-api-model-interaction.md` | API 与模型交互 | NOT_STARTED | 客户端、流式传输、多供应商 |
 | 09 | `wiki/09-sdk-protocol.md` | SDK 与协议 | NOT_STARTED | Op/Event、JSON-RPC、SDK |
 | 10 | `wiki/10-config-system.md` | 配置系统 | NOT_STARTED | 配置分层、Feature flags |
