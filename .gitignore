@@ -2,9 +2,8 @@
 .playwright-mcp/
 .screenshots/
 
-# Captured API data (may contain tokens/sensitive info)
-diagrams/todomvc-capture/*.json
-diagrams/todomvc-capture/*.txt
+# Intermediate analysis artifacts (local only)
+diagrams/
 
 # Temp task outputs
 tmp-todomvc/
