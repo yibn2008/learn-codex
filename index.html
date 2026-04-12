@@ -429,21 +429,37 @@
       { id: 'project', file: 'PROJECT.md', title: '项目目标', section: '', hidden: true },
       { id: 'progress', file: 'PROGRESS.md', title: '任务进度', section: '', hidden: true },
       { id: 'readme', file: 'wiki/README.md', title: '首页', section: '' },
-      { id: '00', file: 'wiki/00-project-overview.md', title: '项目全景概览', section: '基础' },
-      { id: '01', file: 'wiki/01-architecture-overview.md', title: '架构总览', section: '基础' },
-      { id: '02', file: 'wiki/02-prompt-and-tools.md', title: '提示词与工具', section: '基础' },
+      { id: '00', file: 'wiki/00-project-overview.md', section: '基础' },
+      { id: '01', file: 'wiki/01-architecture-overview.md', section: '基础' },
+      { id: '02', file: 'wiki/02-prompt-and-tools.md', section: '基础' },
       { id: '02-full', file: 'wiki/02-appendix/02-full-request-annotated.md', title: '完整请求逐段注解', section: '基础', sub: true },
       { id: '02-json', file: 'wiki/02-appendix/02-full-request.json', title: '完整请求 JSON', section: '基础', sub: true },
-      { id: '03', file: 'wiki/03-agent-loop.md', title: 'Agent Loop', section: '核心' },
-      { id: '04', file: 'wiki/04-tool-system.md', title: '工具系统', section: '核心' },
-      { id: '05', file: 'wiki/05-context-management.md', title: '上下文管理', section: '核心' },
-      { id: '06', file: 'wiki/06-sub-agent-system.md', title: '子 Agent', section: '核心' },
-      { id: '07', file: 'wiki/07-approval-safety.md', title: '审批与安全', section: '核心' },
-      { id: '08', file: 'wiki/08-api-model-interaction.md', title: 'API 与模型交互', section: '核心' },
-      { id: '09', file: 'wiki/09-mcp-skills-plugins.md', title: 'MCP、Skills 与插件', section: '延展' },
-      { id: '10', file: 'wiki/10-sdk-protocol.md', title: '产品集成与 App Server', section: '延展' },
-      { id: '11', file: 'wiki/11-config-system.md', title: '配置系统', section: '延展' },
+      { id: '03', file: 'wiki/03-agent-loop.md', section: '核心' },
+      { id: '04', file: 'wiki/04-tool-system.md', section: '核心' },
+      { id: '05', file: 'wiki/05-context-management.md', section: '核心' },
+      { id: '06', file: 'wiki/06-sub-agent-system.md', section: '核心' },
+      { id: '07', file: 'wiki/07-approval-safety.md', section: '核心' },
+      { id: '08', file: 'wiki/08-api-model-interaction.md', section: '核心' },
+      { id: '09', file: 'wiki/09-mcp-skills-plugins.md', section: '延展' },
+      { id: '10', file: 'wiki/10-sdk-protocol.md', section: '延展' },
+      { id: '11', file: 'wiki/11-config-system.md', section: '延展' },
     ];
+
+    // Pre-fetch titles from Markdown H1 headings (# xx — 标题)
+    async function loadPageTitles() {
+      const fetches = pages.filter(p => !p.title && !p.hidden).map(async (p) => {
+        try {
+          const res = await fetch(p.file);
+          if (!res.ok) return;
+          const text = await res.text();
+          // Match "# 00 — 项目概览" or "# 01 — 架构总览" patterns
+          const m = text.match(/^#\s+(.+)/m);
+          if (m) p.title = m[1].trim();
+        } catch {}
+      });
+      await Promise.all(fetches);
+      buildNav();
+    }
 
     mermaid.initialize({
       startOnLoad: false,
@@ -501,11 +517,13 @@
       for (const p of pages) {
         if (p.hidden) continue;
         if (p.section && p.section !== sec) {
+          if (sec) html += '</div>';
           sec = p.section;
           html += `<div class="nav-group"><div class="nav-label">${sec}</div>`;
         }
         const subClass = p.sub ? ' sub' : '';
-        html += `<a class="nav-item${subClass}" data-id="${p.id}" onclick="loadPage('${p.id}')">${p.title}</a>`;
+        const label = p.title || p.id;
+        html += `<a class="nav-item${subClass}" data-id="${p.id}" onclick="loadPage('${p.id}')">${label}</a>`;
       }
       if (sec) html += '</div>';
       nav.innerHTML = html;
@@ -610,8 +628,11 @@
       document.getElementById('sidebar').classList.toggle('open');
     }
 
+    // Build nav with fallback titles first, then load real titles from files
     buildNav();
-    loadPage(location.hash.replace('#','') || 'readme');
+    loadPageTitles().then(() => {
+      loadPage(location.hash.replace('#','') || 'readme');
+    });
   </script>
 </body>
 </html>
