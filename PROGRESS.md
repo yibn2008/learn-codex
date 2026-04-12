@@ -15,7 +15,7 @@
 |------|--------|---------|------|------|
 | - | `wiki/README.md` | Wiki 首页 | DRAFT | 导航中心 |
 | 00 | `wiki/00-project-overview.md` | 项目全景概览 | REVIEW | 项目结构、技术栈、入口链路 |
-| 01 | `wiki/01-architecture-overview.md` | 架构总览 | NOT_STARTED | 四层架构、核心抽象、数据流 |
+| 01 | `wiki/01-architecture-overview.md` | 架构总览 | DRAFT | 四层架构、核心抽象、数据流 |
 | 02 | `wiki/02-agent-loop.md` | Agent Loop 深度剖析 | NOT_STARTED | run_turn、采样、流式处理 |
 | 03 | `wiki/03-tool-system.md` | 工具系统设计 | NOT_STARTED | 工具分发、执行、沙箱 |
 | 04 | `wiki/04-context-management.md` | 上下文与对话管理 | NOT_STARTED | 历史管理、压缩、Token |
@@ -67,3 +67,14 @@
 - **状态调整**:
   - 第 00 章从 `DRAFT` 更新为 `REVIEW`
 - **下一步**: 用户确认第 00 章通过后，进入第 01 章「架构总览」
+
+### Round 3 (2026-04-12)
+- **目标**: 完成第 01 章「架构总览」
+- **完成**:
+  - [x] 深入阅读 codex.rs、thread_manager.rs、codex_thread.rs、state/、protocol.rs 等核心源码
+  - [x] 创建 wiki/01-architecture-overview.md
+- **产出**:
+  - `wiki/01-architecture-overview.md` — 6 个章节：四层架构图、六个核心抽象（ThreadManager/CodexThread/Codex/Session/TurnContext/Op-Event）、数据流全追踪（时序图）、表示层三种接入方式、状态管理三层模型、小结
+- **状态调整**:
+  - 第 01 章设为 `DRAFT`
+- **下一步**: 用户 review 第 01 章 → 然后进入第 02 章「Agent Loop 深度剖析」

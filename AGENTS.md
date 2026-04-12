@@ -25,8 +25,41 @@
 
 - 所有 Wiki 内容使用中文编写
 - 遇到 Rust 特有概念时，以「知识点小贴士」内联讲解，不设独立的 Rust 入门章节
-- 引用源码时标注文件路径
+- 引用源码时必须使用 **GitHub 链接**，点击后能直接跳转到对应源码位置
+- 每个章节末尾必须添加**上一章/下一章导航链接**（首章只有下一章，末章只有上一章）
 - 每完成一个章节，更新 `PROGRESS.md` 的状态
+
+## 源码引用规则
+
+引用 Codex 源码时，**必须使用可点击的 GitHub 链接**，格式如下：
+
+- 仓库基础 URL: `https://github.com/openai/codex/blob/main/`
+- 引用单个文件: `[codex-rs/core/src/codex.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs)`
+- 引用特定行: `[codex.rs:400](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L400)`
+- 引用行范围: `[codex.rs:400-409](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L400-L409)`
+
+**示例**:
+- 正确: `**源码**: [core/src/codex.rs:825-847](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L825-L847)`
+- 错误: `**源码**: core/src/codex.rs:825-847`（纯文本，不可点击）
+- 错误: `**源码**: codex.rs（825 行）`（缺少完整路径和链接）
+
+正文中提到源码位置时，也应尽量用链接形式，例如：「`run_turn()` 函数定义在 [codex.rs:5971](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5971)」。
+
+## 章节 Review 规则
+
+Review Wiki 章节时，遵循以下原则：
+
+- **先核对事实，再评价表达**：crate 数量、文件数、函数名、模块职责、启动链路、依赖方向等硬事实，必须先与本地源码核对。
+- **以本地源码快照为事实基线**：默认以 `PROJECT.md` 中声明的本地源码目录为准进行核查；如果章节基于特定 commit 或历史版本，必须在文中明确说明版本基线。
+- **优先修正会扭曲读者心智模型的问题**：架构边界画错、调用关系写反、启动链缺失关键中间层，这类问题优先级高于措辞、风格和篇幅问题。
+- **把章节当作“建立认知地图”的文档来审**：不仅检查句子是否通顺，更要检查读者读完后是否会形成正确的整体理解。
+- **检查是否遗漏关键结构层**：对于“项目全景”“架构总览”类章节，重点检查是否漏掉跨层模块，例如 embedded app-server、plugin/skills/connectors、cloud/remote 等会影响整体理解的结构。
+- **图和正文必须一致**：Mermaid 图的箭头方向、图标题中的“调用关系/依赖关系/数据流”语义，必须和正文完全一致，不能图文各说各话。
+- **术语首次出现要对新读者友好**：像 `crate`、`workspace`、`spawn`、`turn` 这类术语，第一次出现时应有一句内联解释，避免默认读者具备 Rust 背景。
+- **关键结论要可追溯**：章节中的关键判断应能追溯到具体源码位置。核查时先用本地源码确认，落文时再转换成可点击的 GitHub 链接。
+- **区分“全景章节”和“深挖章节”**：第 00/01 章重点是建立全局结构，不强行塞入过深实现细节；实现细节放到后续专题章节。
+- **Review 结论按严重程度排序**：优先报告高严重度问题，再报告中低严重度问题。高严重度通常指事实错误、关系错误、关键遗漏；低严重度通常指可读性、术语门槛或导航体验问题。
+- **发现问题后同步维护状态**：章节经过 review 并修订后，应同步更新 `PROGRESS.md` 中的状态、工作记录和相关产物说明。
 
 ## Mermaid 图表规则
 
