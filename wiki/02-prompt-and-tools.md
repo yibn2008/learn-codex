@@ -24,7 +24,7 @@ Codex 使用 OpenAI 的 [Responses API](https://platform.openai.com/docs/api-ref
 
 `instructions` 字段是 Codex 的「人格底座」，定义了 Agent 是谁、怎么做事、怎么说话。这段文本在 Rust 编译时通过 `include_str!` 从 markdown 文件嵌入二进制，运行时不可修改。
 
-> 完整原文见附录：[02a — Base Instructions 完整原文](02-appendix/02a-system-prompt-full.md)
+> 完整原文见：[完整 API 请求逐段注解 - Section 2](02-appendix/02-full-request-annotated.md)
 
 ### 2.1 内容模块拆解
 
@@ -167,7 +167,7 @@ You have 2 ways of communicating with the users:
 }
 ```
 
-> 工具定义的完整 JSON 见附录：[02-appendix/02c-core-tools-full.json](02-appendix/02c-core-tools-full.json)
+> 全部 16 个工具的参数定义见：[完整 API 请求逐段注解 - Section 3](02-appendix/02-full-request-annotated.md)
 
 **源码**: 工具规格构建在 [core/src/tools/spec.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/spec.rs)，路由在 [core/src/tools/router.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/router.rs)。
 
@@ -194,7 +194,7 @@ You have 2 ways of communicating with the users:
 
 > Block 1 的 permissions instructions 是最大的一块，因为它包含了用户之前累积批准的所有命令前缀。新安装的 Codex 这部分会短很多。
 
-> 完整原文见附录：[02b — Developer Message 完整原文](02-appendix/02b-developer-message-full.md)
+> 完整原文见：[完整 API 请求逐段注解 - Section 4.1](02-appendix/02-full-request-annotated.md)
 
 ---
 
@@ -437,10 +437,9 @@ graph TD
 | **input[2]: user** | 用户实际输入 | 可变 | 用户提供 |
 | **input[3+]: history** | assistant / tool_call / tool_output | 累积增长 | 每轮追加 |
 
-完整原始数据附录：
-- [02a — Base Instructions 原文](02-appendix/02a-system-prompt-full.md)（14,732 字符）
-- [02b — Developer Message 原文](02-appendix/02b-developer-message-full.md)（10,132 字符，4 个 Block）
-- [02d — 完整消息示例 JSON](02-appendix/02d-example-messages.json)（第 3 轮请求/响应，含 10 条 input messages + LLM 回复）
+完整请求数据：
+- [完整 API 请求逐段注解](02-appendix/02-full-request-annotated.md) — 第 3 轮请求的 instructions + 16 个 tools + 10 条 messages + LLM 回复，逐段展示并注解
+- [完整请求原始 JSON](02-appendix/02-full-request.json) — 同一请求的原始 JSON 格式（75KB）
 
 ---
 
