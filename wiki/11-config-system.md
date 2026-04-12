@@ -1,4 +1,4 @@
-# 10 — 配置系统
+# 11 — 配置系统
 
 > 本章剖析 Codex 的配置分层合并机制、Feature Flags 系统和权限配置。
 
@@ -155,4 +155,4 @@ writable_roots = ["/tmp", "/var/data"]
 
 ---
 
-**上一章**: [09 — 产品集成与 App Server](09-sdk-protocol.md) | **下一章**: [11 — MCP、Skills 与插件](11-mcp-skills-plugins.md)
+**上一章**: [10 — 产品集成与 App Server](10-sdk-protocol.md)

@@ -228,4 +228,4 @@ Agent Loop 消费这些事件来驱动工具执行和 UI 更新（详见 [03 —
 
 ---
 
-**上一章**: [07 — 审批与安全系统](07-approval-safety.md) | **下一章**: [09 — 产品集成与 App Server](09-sdk-protocol.md)
+**上一章**: [07 — 审批与安全系统](07-approval-safety.md) | **下一章**: [09 — MCP、Skills 与插件](09-mcp-skills-plugins.md)

@@ -1,4 +1,4 @@
-# 11 — MCP、Skills 与插件
+# 09 — MCP、Skills 与插件
 
 > Codex 的能力不是硬编码的——它通过 MCP 接入外部工具、通过 Skills 注入领域知识、通过 Plugin 将两者打包分发。本章剖析这套扩展体系的设计与实现。
 
@@ -353,4 +353,4 @@ Codex 支持插件市场（[core/src/plugins/marketplace.rs](https://github.com/
 
 ---
 
-**上一章**: [10 — 配置系统](10-config-system.md)
+**上一章**: [08 — API 与模型交互](08-api-model-interaction.md) | **下一章**: [10 — 产品集成与 App Server](10-sdk-protocol.md)

@@ -388,8 +388,8 @@ graph TD
 
 ---
 
-> **源码版本说明**: 本文基于 [openai/codex](https://github.com/openai/codex) 主分支分析，源码本地路径为 `/Users/zoujie.wu/workspace/codex-source/`。
+> **源码版本说明**: 本文基于 [openai/codex](https://github.com/openai/codex) 主分支源码分析。
 
 ---
 
-**上一章**: [00 — 项目全景概览](00-project-overview.md) | **下一章**: [02 — 提示词与工具解析](02-prompt-and-tools.md)
+**上一章**: [00 — 项目概览](00-project-overview.md) | **下一章**: [02 — 提示词与工具解析](02-prompt-and-tools.md)

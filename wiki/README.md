@@ -8,7 +8,7 @@
 
 | 章节 | 你将了解 |
 |------|---------|
-| [00 - 项目全景概览](00-project-overview.md) | Codex 是什么？89 个 Rust Crate 的分层结构、TypeScript → Rust 迁移与启动链路 |
+| [00 - 项目概览](00-project-overview.md) | Codex 是什么？89 个 Rust Crate 的分层结构、TypeScript → Rust 迁移与启动链路 |
 | [01 - 架构总览](01-architecture-overview.md) | 四层架构（表示层→会话管理→Agent 核心→能力层）、6 个核心抽象、Op/Event 协议 |
 | [02 - 提示词与工具解析](02-prompt-and-tools.md) | 通过真实抓包数据，逐层拆解发给 LLM 的完整请求：instructions + tools + messages |
 
@@ -21,15 +21,15 @@
 | [05 - 上下文与对话管理](05-context-management.md) | ContextManager、差分更新、Token 估算、Pre-turn/Mid-turn 自动压缩 |
 | [06 - 子 Agent 与任务委派](06-sub-agent-system.md) | AgentControl 生命周期、Mailbox 异步通信、角色系统、审批委托 |
 | [07 - 审批与安全系统](07-approval-safety.md) | 三层安全架构：ExecPolicy 规则→Guardian AI 审查→OS 沙箱隔离 |
+| [08 - API 与模型交互](08-api-model-interaction.md) | 模型管理、供应商适配、双级客户端、WebSocket/SSE 传输、请求构建与重试 |
 
-### 外围篇 — 支撑系统
+### 延展篇 — 扩展与集成
 
 | 章节 | 你将了解 |
 |------|---------|
-| [08 - API 与模型交互](08-api-model-interaction.md) | 13 个 crate 的分层体系：认证、模型管理、供应商适配、传输协议、本地推理 |
-| [09 - 产品集成与 App Server](09-sdk-protocol.md) | Harness 思想、App Server 四组件、Thread/Turn/Item 会话模型、多产品接入与 SDK |
-| [10 - 配置系统](10-config-system.md) | 值层 vs 约束层、Feature Flags、沙箱策略、审批预设 |
-| [11 - MCP、Skills 与插件](11-mcp-skills-plugins.md) | 三种扩展机制：Skills 领域知识注入、MCP 外部工具协议、Plugin 打包分发 |
+| [09 - MCP、Skills 与插件](09-mcp-skills-plugins.md) | 三种扩展机制：Skills 领域知识注入、MCP 外部工具协议、Plugin 打包分发 |
+| [10 - 产品集成与 App Server](10-sdk-protocol.md) | Harness 思想、App Server 四组件、Thread/Turn/Item 会话模型、多产品接入与 SDK |
+| [11 - 配置系统](11-config-system.md) | 值层 vs 约束层、Feature Flags、沙箱策略、审批预设 |
 
 ## 项目概况
 

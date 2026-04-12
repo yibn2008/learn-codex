@@ -1,4 +1,4 @@
-# 00 — 项目全景概览
+# 00 — 项目概览
 
 > Codex CLI 是 OpenAI 出品的本地编码 AI Agent，本章从整体视角剖析这个项目的组成结构、技术栈选择和启动链路。
 
@@ -518,7 +518,7 @@ graph LR
     APP --> CORE
 ```
 
-`codex-core` 是整个系统的枢纽，几乎所有其他 crate 都向它汇聚。这也是为什么 `codex-core` 是最大的 crate（398 个 .rs 文件），源码仓库的 `AGENTS.md` 中明确提醒开发者「resist adding code to codex-core」（`/Users/zoujie.wu/workspace/codex-source/AGENTS.md:56-67`）。
+`codex-core` 是整个系统的枢纽，几乎所有其他 crate 都向它汇聚。这也是为什么 `codex-core` 是最大的 crate（398 个 .rs 文件），源码仓库的 `AGENTS.md` 中明确提醒开发者「resist adding code to codex-core」（[AGENTS.md:56-67](https://github.com/openai/codex/blob/main/AGENTS.md#L56-L67)）。
 
 ## 6. 构建与任务工具链
 
@@ -553,7 +553,7 @@ codegen-units = 1     # 单代码生成单元 — 最大化优化
 
 ---
 
-> **源码版本说明**: 本文基于本地源码快照 `/Users/zoujie.wu/workspace/codex-source/` 分析，对应上游仓库为 [openai/codex](https://github.com/openai/codex)。其中 crate 数量、文件数、入口链路等统计均以这份本地快照为准。
+> **源码版本说明**: 本文基于 [openai/codex](https://github.com/openai/codex) 主分支源码分析。其中 crate 数量、文件数、入口链路等统计均以分析时的源码版本为准。
 
 ---
 
