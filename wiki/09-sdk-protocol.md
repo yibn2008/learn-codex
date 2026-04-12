@@ -5,14 +5,17 @@
 ## 1. 整体架构与伪代码
 
 ```
-// Codex 的对外通信全部基于 Op/Event 协议
-Client → Codex:  submit(Op::UserTurn { ... })       // 客户端发送操作
-Codex → Client:  Event { msg: TurnStarted { ... } } // 服务端返回事件
+// Codex 有三层协议，不要混淆：
 
-// 三种接入方式共用同一个协议：
-TUI        → embedded App Server → ThreadManager → Codex (Op/Event)
-IDE (VS Code) → standalone App Server (JSON-RPC over stdio/ws) → ThreadManager
-SDK        → subprocess (JSON-RPC or JSONL) → ThreadManager
+内部协议:  Op/Event         — codex-core 内部的操作/事件枚举
+公开协议1: App Server JSON-RPC — IDE 和 Python SDK 使用（thread/start, thread/read 等）
+公开协议2: CLI JSONL Events    — TypeScript SDK 使用（thread.started, item.completed 等）
+
+// 三种接入方式使用不同的公开协议：
+TUI          → embedded App Server → Op/Event (内部)
+IDE (VS Code)→ standalone App Server → JSON-RPC (公开协议1) → Op/Event (内部)
+TS SDK       → codex exec --experimental-json → JSONL Events (公开协议2)
+Python SDK   → codex app-server → JSON-RPC (公开协议1) → Op/Event (内部)
 ```
 
 ```mermaid
@@ -30,11 +33,13 @@ graph TD
     end
 ```
 
-## 2. Op/Event 协议
+## 2. 内部协议：Op/Event
+
+Op/Event 是 **codex-core 内部**的操作/事件枚举，不直接暴露给外部客户端（IDE/SDK 通过 JSON-RPC 或 JSONL 间接使用）。
 
 ### 2.1 Op（客户端 → 服务端）
 
-Op 是客户端提交给 Codex 的操作指令。关键类型：
+Op 是内部提交给 Codex 的操作指令。关键类型：
 
 | 类别 | Op | 说明 |
 |------|-----|------|

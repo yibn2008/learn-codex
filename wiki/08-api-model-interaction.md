@@ -47,14 +47,14 @@ graph LR
 
 ### ModelClientSession（Turn 级）
 
-每个 Turn 创建一个，复用 WebSocket 连接：
+每个 Turn 创建一个 `ModelClientSession`，但 WebSocket 连接的生命周期**跨越 Turn**：
 
-| 字段 | 说明 |
-|------|------|
-| `websocket_connection` | 懒初始化的 WebSocket 连接（Turn 内复用） |
-| `turn_state_token` | 服务端 sticky routing token（确保请求路由到同一节点） |
+| 字段 | 作用域 | 说明 |
+|------|--------|------|
+| `websocket_connection` | **Session 级** | 创建时从 ModelClient 取出缓存的连接，Drop 时存回去 |
+| `turn_state_token` | **Turn 级** | 服务端 sticky routing token（当前 Turn 独有） |
 
-Turn 结束或压缩后，WebSocket 连接重置。
+> 关键区别：WebSocket 连接和 HTTP 降级状态是 **Session 级**的（跨 Turn 复用），只有 sticky routing token 是 Turn 级的。压缩后 WebSocket 连接重置（因为 prompt cache 失效）。
 
 **源码**: [core/src/client.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs)
 
