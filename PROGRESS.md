@@ -21,7 +21,7 @@
 | 02b | `wiki/02b-developer-message-full.md` | (附录) Developer Message 原文 | DRAFT | 19,800 字符，5 个 Block |
 | 03 | `wiki/03-agent-loop.md` | Agent Loop 深度剖析 | DRAFT | run_turn、采样、真实任务串讲 |
 | 04 | `wiki/04-tool-system.md` | 工具系统设计 | DRAFT | 工具分发、并行控制、审批沙箱 |
-| 05 | `wiki/05-context-management.md` | 上下文与对话管理 | NOT_STARTED | 历史管理、压缩、Token |
+| 05 | `wiki/05-context-management.md` | 上下文与对话管理 | DRAFT | ContextManager、差分更新、压缩、Token 估算 |
 | 06 | `wiki/06-sub-agent-system.md` | 子 Agent 与任务委派 | NOT_STARTED | 多 Agent、信箱、编排 |
 | 07 | `wiki/07-approval-safety.md` | 审批与安全系统 | NOT_STARTED | 策略、Guardian、沙箱 |
 | 08 | `wiki/08-api-model-interaction.md` | API 与模型交互 | NOT_STARTED | 客户端、流式传输、多供应商 |
