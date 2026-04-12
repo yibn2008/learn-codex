@@ -77,7 +77,7 @@ pub struct ToolCall {
 
 > 如果 FunctionCall 的名称匹配到已注册的 MCP 工具，自动包装为 `Mcp` payload。
 
-**源码**: [tools/router.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/router.rs)
+**源码**: [tools/router.rs:117-214](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/router.rs#L117-L214)（`build_tool_call` 函数）
 
 ## 3. ToolCallRuntime：并行控制与取消
 
@@ -103,7 +103,7 @@ if supports_parallel {
 
 ### 3.2 取消机制
 
-每个工具调用通过 `CancellationToken` 支持取消：
+每个工具调用通过 `CancellationToken` 支持取消（用户按 Ctrl+C 中断时，token 会被标记为 cancelled，所有持有它的异步任务都会收到通知）：
 
 ```
 tokio::select! {
@@ -112,7 +112,7 @@ tokio::select! {
 }
 ```
 
-**源码**: [tools/parallel.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/parallel.rs)
+**源码**: [tools/parallel.rs:74-133](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/parallel.rs#L74-L133)
 
 ## 4. ToolRegistry：Handler 注册与分发
 
@@ -127,6 +127,8 @@ builder.build() → (specs, registry)
 ```
 
 定义和处理器**解耦**：同一个 handler 可以服务多个工具名。例如 `UnifiedExecHandler` 同时处理 `exec_command` 和 `write_stdin`。
+
+> **知识点 — `trait`**: Rust 的 `trait` 类似于 Java 的 interface 或 Go 的 interface——定义一组方法签名，不同类型可以各自实现。`ToolHandler` trait 定义了 `handle()`、`is_mutating()` 等方法，每个工具处理器（ShellHandler、McpHandler 等）都实现了这个 trait。
 
 ### 4.2 分发流程
 
@@ -144,7 +146,7 @@ dispatch_any(invocation)
 
 注意：`is_mutating()` 检查和并行锁是**两个独立的机制**。`is_mutating()` 控制的是 `tool_call_gate`（一个 readiness flag），用于等待前一个变更操作完成后再开始新的变更。这和 `RwLock` 的并行/串行控制不同。
 
-**源码**: [tools/registry.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/registry.rs)
+**源码**: [tools/registry.rs:209-429](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/registry.rs#L209-L429)（`dispatch_any` 函数）
 
 ## 5. ToolOrchestrator：审批 → 沙箱 → 执行
 
