@@ -258,8 +258,4 @@ drop_last_n_user_turns(n)
 
 ---
 
-> **源码版本说明**: 本文基于 [openai/codex](https://github.com/openai/codex) 主分支分析。
-
----
-
 **上一章**: [04 — 工具系统设计](04-tool-system.md) | **下一章**: [06 — 子 Agent 与任务委派](06-sub-agent-system.md)

@@ -151,8 +151,4 @@ writable_roots = ["/tmp", "/var/data"]
 
 ---
 
-> **源码版本说明**: 本文基于 [openai/codex](https://github.com/openai/codex) 主分支分析。
-
----
-
 **上一章**: [10 — 产品集成与 App Server](10-sdk-protocol.md)

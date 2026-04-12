@@ -4,7 +4,7 @@
 
 ## 1. Codex CLI 是什么
 
-Codex CLI 是一个**运行在本地的编码 AI Agent**。它不是一个简单的 API 包装器，而是一个完整的 Agent 系统，具备以下核心能力：
+Codex CLI 是一个**运行在本地的编码 AI Agent**。它是一个完整的 Agent 系统，具备以下核心能力：
 
 - **自主执行**: 能自主执行 shell 命令、编辑文件、搜索代码
 - **多轮对话**: 维护完整的对话上下文，支持上下文压缩
@@ -62,7 +62,7 @@ codex/                              # 仓库根目录
 │   ├── state/                     # 会话状态持久化（SQLite）
 │   ├── hooks/                     # 执行钩子系统
 │   ├── features/                  # Feature Flag 管理
-│   ├── rollout/                   # 灰度发布控制
+│   ├── rollout/                   # 会话记录持久化与发现
 │   │
 │   │  ── 模型与 API ──
 │   ├── codex-api/                 # OpenAI API 客户端封装
@@ -295,7 +295,7 @@ graph TD
 | **安全与沙箱** | `sandboxing`, `execpolicy`, `execpolicy-legacy`, `linux-sandbox`, `windows-sandbox-rs`, `process-hardening`, `secrets`, `keyring-store`, `shell-escalation` | 沙箱管理、执行策略、Landlock/AppContainer 沙箱、进程加固、密钥保护、提权检测 |
 | **模型与 API** | `codex-api`, `codex-client`, `backend-client`, `login`, `models-manager`, `ollama`, `lmstudio`, `model-provider-info`, `chatgpt`, `codex-backend-openapi-models` | API 客户端、认证、模型管理、多供应商适配、OpenAPI 模型定义 |
 | **协议与通信** | `protocol`, `app-server-protocol`, `app-server-client`, `app-server-test-client`, `stdio-to-uds` | Op/Event 协议、JSON-RPC 协议、测试客户端、Stdio ↔ UDS 桥接 |
-| **基础设施** | `analytics`, `otel`, `features`, `rollout`, `feedback`, `response-debug-context` | 遥测、OpenTelemetry、Feature Flags、灰度发布、用户反馈、调试上下文 |
+| **基础设施** | `analytics`, `otel`, `features`, `rollout`, `feedback`, `response-debug-context` | 遥测、OpenTelemetry、Feature Flags、会话记录持久化、用户反馈、调试上下文 |
 | **插件与协作** | `plugin`, `connectors`, `instructions`, `collaboration-mode-templates` | 插件装载与发现、外部连接器、指令拼装、协作模式模板 |
 | **云与远程** | `cloud-requirements`, `cloud-tasks`, `cloud-tasks-client`, `cloud-tasks-mock-client`, `realtime-webrtc`, `network-proxy`, `responses-api-proxy` | 云端任务、远程控制、Mock 测试、WebRTC 实时通信、网络代理 |
 | **工具库** | `utils/*` (22 个) | 绝对路径、缓存、图片处理、PTY、模糊匹配、TLS、模板渲染等 |
@@ -522,7 +522,7 @@ graph LR
 
 ## 6. 构建与任务工具链
 
-Codex 并不是只靠单一构建工具，而是组合了多套构建与任务工具：
+Codex 组合了多套构建与任务工具：
 
 | 构建工具 | 用途 | 特点 |
 |---------|------|------|

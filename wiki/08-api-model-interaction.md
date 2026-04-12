@@ -135,7 +135,7 @@ WebSocket 还支持 **prewarm**（`generate=false`）——在用户输入时预
 
 ### 3.3 降级策略
 
-传输选择不是每次独立判断，而是有**单向降级**语义：
+传输选择有**单向降级**语义：
 
 1. 首次尝试 WebSocket
 2. 失败后 `force_http_fallback = true`（Session 级状态）

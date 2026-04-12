@@ -278,8 +278,4 @@ SpawnAgentHandler.handle()
 
 ---
 
-> **源码版本说明**: 本文基于 [openai/codex](https://github.com/openai/codex) 主分支分析。
-
----
-
 **上一章**: [03 — Agent Loop 深度剖析](03-agent-loop.md) | **下一章**: [05 — 上下文与对话管理](05-context-management.md)

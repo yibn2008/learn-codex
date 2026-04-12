@@ -260,8 +260,4 @@ apply_role_to_config(config, role_name)
 
 ---
 
-> **源码版本说明**: 本文基于 [openai/codex](https://github.com/openai/codex) 主分支分析。
-
----
-
 **上一章**: [05 — 上下文与对话管理](05-context-management.md) | **下一章**: [07 — 审批与安全系统](07-approval-safety.md)

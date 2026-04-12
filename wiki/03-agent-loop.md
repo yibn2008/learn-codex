@@ -350,8 +350,4 @@ pub struct RunningTask {
 
 ---
 
-> **源码版本说明**: 本文基于 [openai/codex](https://github.com/openai/codex) 主分支分析。
-
----
-
 **上一章**: [02 — 提示词与工具解析](02-prompt-and-tools.md) | **下一章**: [04 — 工具系统设计](04-tool-system.md)

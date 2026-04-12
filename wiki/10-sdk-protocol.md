@@ -4,7 +4,7 @@
 
 ## 1. 整体概览：Harness 的思想
 
-OpenAI 在官方博客 [Unlocking the Codex harness](https://openai.com/index/unlocking-the-codex-harness/) 中提出了 **Harness**（直译"线束"）的概念：
+OpenAI 在官方博客 [Unlocking the Codex harness](https://openai.com/index/unlocking-the-codex-harness/) 中提出了 **Harness** 的概念（类似"测试框架"中 test harness 的用法，指包裹核心逻辑的运行骨架）：
 
 > "The model does the reasoning at each step, but the harness handles everything else."
 
@@ -31,7 +31,7 @@ OpenAI 在官方博客 [Unlocking the Codex harness](https://openai.com/index/un
 
 ### 演进路径
 
-App Server 不是一步到位的设计，而是经历了三个阶段（见 [Unlocking the Codex harness](https://openai.com/index/unlocking-the-codex-harness/)）：
+App Server 经历了三个演进阶段（见 [Unlocking the Codex harness](https://openai.com/index/unlocking-the-codex-harness/)）：
 
 | 阶段 | 方案 | 问题 |
 |------|------|------|

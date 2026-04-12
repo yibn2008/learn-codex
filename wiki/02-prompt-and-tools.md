@@ -202,8 +202,4 @@ safe, average-looking layouts.
 
 ---
 
-> **源码版本说明**: Codex v0.120.0, model gpt-5.4。数据通过 API 代理抓取。
-
----
-
 **上一章**: [01 — 架构总览](01-architecture-overview.md) | **下一章**: [03 — Agent Loop 深度剖析](03-agent-loop.md)
