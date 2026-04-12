@@ -32,6 +32,44 @@ graph TD
 
 **源码**: [codex.rs:5971-6483](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5971-L6483)
 
+### 伪代码总览
+
+```
+async fn run_turn(sess, turn_context, input) {
+    // ── 预处理 ──
+    if should_pre_compact() { run_auto_compact(); }
+    let client_session = ModelClientSession::new();  // 整个 Turn 复用
+
+    // ── 主循环 ──
+    loop {
+        drain_pending_input(&sess);                  // 1. 排空 mailbox / 用户注入
+        let input = sess.history.clone_for_prompt(); // 2. 构建采样输入
+
+        let result = run_sampling_request(           // 3. 执行采样
+            &sess, &turn_context, input, &client_session
+        ).await;
+        //   → built_tools() → build_prompt() → stream()
+        //   → 处理事件流 → handle_output_item_done() → drain_in_flight()
+
+        let needs_follow_up = result.needs_follow_up // 4. 判断是否继续
+            || sess.has_pending_input();
+        let token_limit_reached = total_tokens >= compact_limit;
+
+        if needs_follow_up && token_limit_reached {
+            run_auto_compact();                      // mid-turn 压缩
+            continue;
+        }
+        if needs_follow_up { continue; }             // 工具结果已入 history
+
+        match run_stop_hooks().await {               // 5. Stop hooks
+            Continue => continue,                    // hook 要求继续
+            Stop => break,                           // 正常结束
+        }
+    }
+    emit_event(TurnComplete { usage });
+}
+```
+
 ### 关键点
 
 1. **单一 loop**：不是递归，是一个平坦的无限循环，每次迭代 = 一轮 LLM 采样
@@ -299,60 +337,7 @@ pub struct RunningTask {
 
 **源码**: [state/turn.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/state/turn.rs), [tasks/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tasks/mod.rs)
 
-## 7. 完整执行流程伪代码
-
-将以上所有环节串联起来：
-
-```
-async fn run_turn(sess, turn_context, input) {
-    // ── 预处理 ──
-    if should_pre_compact() {
-        run_auto_compact();
-    }
-    let client_session = ModelClientSession::new();  // 整个 Turn 复用
-
-    // ── 主循环 ──
-    loop {
-        // 1. 排空待处理输入
-        drain_pending_input(&sess);
-
-        // 2. 构建采样输入
-        let input = sess.history.clone_for_prompt();
-
-        // 3. 执行采样
-        let result = run_sampling_request(
-            &sess, &turn_context, input, &client_session
-        ).await;
-        //   内部流程:
-        //   built_tools() → build_prompt() → stream() → 处理事件流
-        //   工具调用 → handle_output_item_done() → drain_in_flight()
-
-        // 4. 判断是否继续
-        let needs_follow_up = result.needs_follow_up || sess.has_pending_input();
-        let token_limit_reached = total_tokens >= compact_limit;
-
-        if needs_follow_up && token_limit_reached {
-            run_auto_compact();   // mid-turn 压缩
-            continue;
-        }
-
-        if needs_follow_up {
-            continue;             // 工具结果已入 history，继续采样
-        }
-
-        // 5. Stop hooks
-        match run_stop_hooks().await {
-            Continue => continue,  // hook 要求继续
-            Stop => break,         // 正常结束
-        }
-    }
-
-    // ── Turn 完成 ──
-    emit_event(TurnComplete { usage });
-}
-```
-
-## 8. 本章小结
+## 7. 本章小结
 
 | 概念 | 说明 | 源码 |
 |------|------|------|
