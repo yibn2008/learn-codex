@@ -392,4 +392,4 @@ graph TD
 
 ---
 
-**上一章**: [00 — 项目全景概览](00-project-overview.md) | **下一章**: [02 — Agent Loop 深度剖析](02-agent-loop.md)
+**上一章**: [00 — 项目全景概览](00-project-overview.md) | **下一章**: [02 — 提示词与工具解析](02-prompt-and-tools.md)

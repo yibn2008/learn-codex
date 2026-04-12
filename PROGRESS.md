@@ -16,13 +16,15 @@
 | - | `wiki/README.md` | Wiki 首页 | DRAFT | 导航中心 |
 | 00 | `wiki/00-project-overview.md` | 项目全景概览 | REVIEW | 项目结构、技术栈、入口链路 |
 | 01 | `wiki/01-architecture-overview.md` | 架构总览 | DRAFT | 四层架构、核心抽象、数据流 |
-| 02 | `wiki/02-agent-loop.md` | Agent Loop 深度剖析 | DRAFT | run_turn、采样、真实任务串讲 |
-| 03 | `wiki/03-tool-system.md` | 工具系统设计 | NOT_STARTED | 工具分发、执行、沙箱 |
-| 04 | `wiki/04-context-management.md` | 上下文与对话管理 | NOT_STARTED | 历史管理、压缩、Token |
-| 05 | `wiki/05-sub-agent-system.md` | 子 Agent 与任务委派 | NOT_STARTED | 多 Agent、信箱、编排 |
-| 06 | `wiki/06-approval-safety.md` | 审批与安全系统 | NOT_STARTED | 策略、Guardian、沙箱 |
-| 07 | `wiki/07-api-model-interaction.md` | API 与模型交互 | NOT_STARTED | 客户端、流式传输、多供应商 |
-| 08 | `wiki/08-prompt-engineering.md` | 提示工程 | NOT_STARTED | 系统消息、模板、动态注入 |
+| 02 | `wiki/02-prompt-and-tools.md` | 提示词与工具解析 | DRAFT | 完整 prompt 结构、工具定义、消息格式 |
+| 02a | `wiki/02a-system-prompt-full.md` | (附录) Base Instructions 原文 | DRAFT | 14,700 字符完整原文 |
+| 02b | `wiki/02b-developer-message-full.md` | (附录) Developer Message 原文 | DRAFT | 19,800 字符，5 个 Block |
+| 03 | `wiki/03-agent-loop.md` | Agent Loop 深度剖析 | DRAFT | run_turn、采样、真实任务串讲 |
+| 04 | `wiki/04-tool-system.md` | 工具系统设计 | NOT_STARTED | 工具分发、执行、沙箱 |
+| 05 | `wiki/05-context-management.md` | 上下文与对话管理 | NOT_STARTED | 历史管理、压缩、Token |
+| 06 | `wiki/06-sub-agent-system.md` | 子 Agent 与任务委派 | NOT_STARTED | 多 Agent、信箱、编排 |
+| 07 | `wiki/07-approval-safety.md` | 审批与安全系统 | NOT_STARTED | 策略、Guardian、沙箱 |
+| 08 | `wiki/08-api-model-interaction.md` | API 与模型交互 | NOT_STARTED | 客户端、流式传输、多供应商 |
 | 09 | `wiki/09-sdk-protocol.md` | SDK 与协议 | NOT_STARTED | Op/Event、JSON-RPC、SDK |
 | 10 | `wiki/10-config-system.md` | 配置系统 | NOT_STARTED | 配置分层、Feature flags |
 

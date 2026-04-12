@@ -1,4 +1,4 @@
-# 02 — Agent Loop 深度剖析
+# 03 — Agent Loop 深度剖析
 
 > 本章以一个真实的 TODOMVC 任务为主线，逐步揭示 Codex Agent 的核心循环：从用户输入到 Prompt 构建、模型采样、工具调用，再到最终回复的完整生命周期。
 
@@ -403,4 +403,4 @@ Turn 主循环中：
 
 ---
 
-**上一章**: [01 — 架构总览](01-architecture-overview.md) | **下一章**: [03 — 工具系统设计](03-tool-system.md)
+**上一章**: [02 — 提示词与工具解析](02-prompt-and-tools.md) | **下一章**: [04 — 工具系统设计](04-tool-system.md)
