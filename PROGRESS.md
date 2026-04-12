@@ -14,7 +14,7 @@
 | 编号 | 文件名 | 章节标题 | 状态 | 说明 |
 |------|--------|---------|------|------|
 | - | `wiki/README.md` | Wiki 首页 | DRAFT | 导航中心 |
-| 00 | `wiki/00-project-overview.md` | 项目全景概览 | DRAFT | 项目结构、技术栈、入口链路 |
+| 00 | `wiki/00-project-overview.md` | 项目全景概览 | REVIEW | 项目结构、技术栈、入口链路 |
 | 01 | `wiki/01-architecture-overview.md` | 架构总览 | NOT_STARTED | 四层架构、核心抽象、数据流 |
 | 02 | `wiki/02-agent-loop.md` | Agent Loop 深度剖析 | NOT_STARTED | run_turn、采样、流式处理 |
 | 03 | `wiki/03-tool-system.md` | 工具系统设计 | NOT_STARTED | 工具分发、执行、沙箱 |
@@ -32,9 +32,9 @@
 
 | 产物 | 位置 | 关联章节 | 状态 |
 |------|------|---------|------|
-| 项目结构总览图 | 嵌入在 00-project-overview.md | 00 | 待创建 |
-| 入口链路流程图 | 嵌入在 00-project-overview.md | 00 | 待创建 |
-| Crate 依赖关系图 | diagrams/ | 00, 01 | 待创建 |
+| 项目结构总览图 | 嵌入在 00-project-overview.md | 00 | 已创建 |
+| 入口链路流程图 | 嵌入在 00-project-overview.md | 00 | 已创建 |
+| Crate 依赖关系图 | 嵌入在 00-project-overview.md | 00, 01 | 已创建 |
 
 ## 每轮工作记录
 
@@ -48,8 +48,22 @@
   - [x] 创建 wiki/00-project-overview.md（项目全景概览，DRAFT 状态）
 - **产出**:
   - `PROJECT.md` — 项目总目标，包含分析维度、章节规划、工作流程、质量标准
-  - `wiki/00-project-overview.md` — 7 个章节：Codex 简介、单仓结构、89 Crate 全景分类（含 Mermaid 图）、启动链路全追踪（含时序图）、核心依赖关系图、构建系统、小结
+  - `wiki/00-project-overview.md` — 7 个章节：Codex 简介、单仓结构、88 Crate 全景分类（含 Mermaid 图）、启动链路全追踪（含时序图）、核心依赖关系图、构建与任务工具链、小结
 - **发现的问题**:
   - `codex-core` 是最大的 crate（398 个 .rs 文件，核心 codex.rs 7931 行），官方也在 AGENTS.md 中提醒要控制其膨胀
   - 仓库有多个 fork 的第三方依赖（ratatui, tungstenite, crossterm），说明对底层有定制需求
 - **下一步**: 用户 review 第 00 章 + review agent 审核 → 然后进入第 01 章「架构总览」
+
+### Round 2 (2026-04-12)
+- **目标**: 根据 review 修正第 00 章的事实错误，并补齐总体结构中容易遗漏的部分
+- **完成**:
+  - [x] 将 crate 数量从 89 修正为 88
+  - [x] 修正 `codex-core` 依赖关系图的箭头方向
+  - [x] 重写 TUI / App Server / Core 的启动链说明
+  - [x] 补充插件、连接器、云与远程模块的结构说明
+  - [x] 为关键段落补充源码路径与行号范围
+- **产出**:
+  - `wiki/00-project-overview.md` — 已修正为基于本地源码快照的版本，并新增“从总体结构看最容易遗漏的三层”
+- **状态调整**:
+  - 第 00 章从 `DRAFT` 更新为 `REVIEW`
+- **下一步**: 用户确认第 00 章通过后，进入第 01 章「架构总览」
