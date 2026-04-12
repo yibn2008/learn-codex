@@ -1,6 +1,6 @@
 # 02b — Developer Message 完整原文
 
-> 本页是 [02 — 提示词与工具解析](02-prompt-and-tools.md) 的附录，收录 Codex 在每个 Turn 开始时发送给 LLM 的 developer 角色消息完整原文（约 19,800 字符）。该消息由 5 个独立的 `input_text` 块组成。
+> 本页是 [02 — 提示词与工具解析](../02-prompt-and-tools.md) 的附录，收录 Codex 在每个 Turn 开始时发送给 LLM 的 developer 角色消息完整原文（约 19,800 字符）。该消息由 5 个独立的 `input_text` 块组成。
 
 **抓取来源**: rollout JSONL 的 response_item (type=message, role=developer)
 
@@ -211,4 +211,4 @@ A plugin is a local bundle of skills, MCP servers, and apps. Below is the list o
 
 ---
 
-**返回**: [02 — 提示词与工具解析](02-prompt-and-tools.md)
+**返回**: [02 — 提示词与工具解析](../02-prompt-and-tools.md)

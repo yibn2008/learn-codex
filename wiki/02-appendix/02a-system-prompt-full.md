@@ -1,6 +1,6 @@
 # 02a — Base Instructions 完整原文
 
-> 本页是 [02 — 提示词与工具解析](02-prompt-and-tools.md) 的附录，收录 Codex 的 base instructions 完整原文（约 14,700 字符）。这段文本在编译时通过 `include_str!` 嵌入 Codex 二进制，作为每次 LLM 请求的系统人格基座。
+> 本页是 [02 — 提示词与工具解析](../02-prompt-and-tools.md) 的附录，收录 Codex 的 base instructions 完整原文（约 14,700 字符）。这段文本在编译时通过 `include_str!` 嵌入 Codex 二进制，作为每次 LLM 请求的系统人格基座。
 
 **抓取来源**: `codex debug prompt-input` 输出 + rollout JSONL session_meta.base_instructions
 
@@ -139,4 +139,4 @@ Requirements for your final answer:
 
 ---
 
-**返回**: [02 — 提示词与工具解析](02-prompt-and-tools.md)
+**返回**: [02 — 提示词与工具解析](../02-prompt-and-tools.md)

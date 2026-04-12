@@ -106,6 +106,14 @@
       width: 2px;
       background: var(--accent);
     }
+    .nav-item.sub {
+      padding-left: 40px;
+      font-size: 0.78rem;
+      color: var(--text-faint);
+    }
+    .nav-item.sub:hover { color: var(--text-dim); }
+    .nav-item.sub.active { color: var(--text-strong); }
+    .nav-item.sub.active::before { left: 16px; }
 
     /* ── Main ── */
     .main {
@@ -380,6 +388,8 @@
       { id: '00', file: 'wiki/00-project-overview.md', title: '项目全景概览', section: '基础' },
       { id: '01', file: 'wiki/01-architecture-overview.md', title: '架构总览', section: '基础' },
       { id: '02', file: 'wiki/02-prompt-and-tools.md', title: '提示词与工具', section: '基础' },
+      { id: '02a', file: 'wiki/02-appendix/02a-system-prompt-full.md', title: 'Base Instructions 原文', section: '基础', sub: true },
+      { id: '02b', file: 'wiki/02-appendix/02b-developer-message-full.md', title: 'Developer Message 原文', section: '基础', sub: true },
       { id: '03', file: 'wiki/03-agent-loop.md', title: 'Agent Loop', section: '核心' },
       { id: '04', file: 'wiki/04-tool-system.md', title: '工具系统', section: '核心' },
       { id: '05', file: 'wiki/05-context-management.md', title: '上下文管理', section: '核心' },
@@ -414,9 +424,13 @@
       return `<pre><code class="language-${lang || ''}">${esc}</code></pre>`;
     };
     renderer.link = function({ href, title, text }) {
-      if (href && href.match(/^\d{2}-.*\.md$/)) {
-        const id = href.match(/^(\d{2})/)[1];
-        return `<a href="#${id}" onclick="loadPage('${id}');return false;">${text}</a>`;
+      if (href) {
+        // Match wiki internal links: 02-xxx.md, ../02-xxx.md, 02-appendix/02a-xxx.md
+        const mdMatch = href.match(/(?:\.\.\/)?(\d{2}[a-z]?)-[^/]*\.md$/) || href.match(/02-appendix\/(02[a-z])-/);
+        if (mdMatch) {
+          const id = mdMatch[1];
+          return `<a href="#${id}" onclick="loadPage('${id}');return false;">${text}</a>`;
+        }
       }
       const ext = href && href.startsWith('http') ? ' target="_blank" rel="noopener"' : '';
       return `<a href="${href}"${ext}>${text}</a>`;
@@ -432,7 +446,8 @@
           sec = p.section;
           html += `<div class="nav-group"><div class="nav-label">${sec}</div>`;
         }
-        html += `<a class="nav-item" data-id="${p.id}" onclick="loadPage('${p.id}')">${p.title}</a>`;
+        const subClass = p.sub ? ' sub' : '';
+        html += `<a class="nav-item${subClass}" data-id="${p.id}" onclick="loadPage('${p.id}')">${p.title}</a>`;
       }
       if (sec) html += '</div>';
       nav.innerHTML = html;
