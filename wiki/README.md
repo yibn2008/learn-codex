@@ -8,7 +8,7 @@
 
 | 章节 | 你将了解 |
 |------|---------|
-| [00 - 项目全景概览](00-project-overview.md) | Codex 是什么？88 个 Rust Crate 的分层结构、TypeScript + Rust 的启动链路 |
+| [00 - 项目全景概览](00-project-overview.md) | Codex 是什么？89 个 Rust Crate 的分层结构、TypeScript → Rust 迁移与启动链路 |
 | [01 - 架构总览](01-architecture-overview.md) | 四层架构（表示层→会话管理→Agent 核心→能力层）、6 个核心抽象、Op/Event 协议 |
 | [02 - 提示词与工具解析](02-prompt-and-tools.md) | 通过真实抓包数据，逐层拆解发给 LLM 的完整请求：instructions + tools + messages |
 
@@ -26,9 +26,10 @@
 
 | 章节 | 你将了解 |
 |------|---------|
-| [08 - API 与模型交互](08-api-model-interaction.md) | 双级客户端、WebSocket/SSE 传输层、多供应商适配 |
-| [09 - SDK 与协议](09-sdk-protocol.md) | 三层协议（内部 Op/Event + 公开 JSON-RPC + CLI JSONL）、App Server |
+| [08 - API 与模型交互](08-api-model-interaction.md) | 13 个 crate 的分层体系：认证、模型管理、供应商适配、传输协议、本地推理 |
+| [09 - 产品集成与 App Server](09-sdk-protocol.md) | Harness 思想、App Server 四组件、Thread/Turn/Item 会话模型、多产品接入与 SDK |
 | [10 - 配置系统](10-config-system.md) | 值层 vs 约束层、Feature Flags、沙箱策略、审批预设 |
+| [11 - MCP、Skills 与插件](11-mcp-skills-plugins.md) | 三种扩展机制：Skills 领域知识注入、MCP 外部工具协议、Plugin 打包分发 |
 
 ## 项目概况
 
@@ -36,7 +37,7 @@
 OpenAI Codex CLI — 运行在本地的编码 AI Agent
 
 技术栈    TypeScript (入口) + Rust (核心引擎) + Python/TS SDK
-代码规模  88 个 Rust Crate，1,418 个 .rs 文件
+代码规模  89 个 Rust Crate，1,418 个 .rs 文件
 核心文件  codex.rs — 7,931 行（Agent 主循环）
 支持平台  macOS / Linux / Windows (arm64 + x64)
 运行模式  交互式 TUI、非交互 Exec、App Server (IDE)、MCP Server

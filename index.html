@@ -426,6 +426,8 @@
   <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <script>
     const pages = [
+      { id: 'project', file: 'PROJECT.md', title: '项目目标', section: '', hidden: true },
+      { id: 'progress', file: 'PROGRESS.md', title: '任务进度', section: '', hidden: true },
       { id: 'readme', file: 'wiki/README.md', title: '首页', section: '' },
       { id: '00', file: 'wiki/00-project-overview.md', title: '项目全景概览', section: '基础' },
       { id: '01', file: 'wiki/01-architecture-overview.md', title: '架构总览', section: '基础' },
@@ -438,8 +440,9 @@
       { id: '06', file: 'wiki/06-sub-agent-system.md', title: '子 Agent', section: '核心' },
       { id: '07', file: 'wiki/07-approval-safety.md', title: '审批与安全', section: '核心' },
       { id: '08', file: 'wiki/08-api-model-interaction.md', title: 'API 交互', section: '外围' },
-      { id: '09', file: 'wiki/09-sdk-protocol.md', title: 'SDK 与协议', section: '外围' },
+      { id: '09', file: 'wiki/09-sdk-protocol.md', title: '产品集成与 App Server', section: '外围' },
       { id: '10', file: 'wiki/10-config-system.md', title: '配置系统', section: '外围' },
+      { id: '11', file: 'wiki/11-mcp-skills-plugins.md', title: 'MCP、Skills 与插件', section: '外围' },
     ];
 
     mermaid.initialize({
@@ -457,6 +460,16 @@
       },
     });
 
+    let currentPageFile = '';
+
+    function resolveRepoPath(fromFile, target) {
+      if (!target) return target;
+      if (/^(?:[a-z]+:|\/\/|#)/i.test(target)) return target;
+      const fromDir = fromFile.includes('/') ? fromFile.slice(0, fromFile.lastIndexOf('/') + 1) : '';
+      const resolved = new URL(target, `https://repo.local/${fromDir}`);
+      return `${resolved.pathname.replace(/^\//, '')}${resolved.search}${resolved.hash}`;
+    }
+
     const renderer = new marked.Renderer();
     renderer.code = function({ text, lang }) {
       if (lang === 'mermaid') {
@@ -466,16 +479,18 @@
       return `<pre><code class="language-${lang || ''}">${esc}</code></pre>`;
     };
     renderer.link = function({ href, title, text }) {
-      if (href && !href.startsWith('http')) {
-        // Resolve relative paths and find matching page by file path suffix
-        const clean = href.replace(/^\.\.\//, '');
-        const match = pages.find(p => p.file.endsWith(clean) || p.file.endsWith('/' + clean));
+      if (href && !/^(?:[a-z]+:|\/\/|#)/i.test(href)) {
+        const resolvedHref = resolveRepoPath(currentPageFile, href);
+        const resolvedPath = resolvedHref.split('#')[0];
+        const match = pages.find(p => p.file === resolvedPath);
         if (match) {
           return `<a href="#${match.id}" onclick="loadPage('${match.id}');return false;">${text}</a>`;
         }
+        href = resolvedHref;
       }
-      const ext = href && href.startsWith('http') ? ' target="_blank" rel="noopener"' : '';
-      return `<a href="${href}"${ext}>${text}</a>`;
+      const ext = href && /^(?:https?:)?\/\//i.test(href) ? ' target="_blank" rel="noopener"' : '';
+      const titleAttr = title ? ` title="${title}"` : '';
+      return `<a href="${href}"${titleAttr}${ext}>${text}</a>`;
     };
     marked.setOptions({ renderer, gfm: true, breaks: false });
 
@@ -484,6 +499,7 @@
       let html = '';
       let sec = '';
       for (const p of pages) {
+        if (p.hidden) continue;
         if (p.section && p.section !== sec) {
           sec = p.section;
           html += `<div class="nav-group"><div class="nav-label">${sec}</div>`;
@@ -511,6 +527,7 @@
           return;
         }
         const text = await res.text();
+        currentPageFile = page.file;
         if (page.file.endsWith('.json')) {
           const pretty = JSON.stringify(JSON.parse(text), null, 2);
           content.innerHTML = `<h1>${page.title}</h1><pre><code class="language-json">${pretty.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code></pre>`;
