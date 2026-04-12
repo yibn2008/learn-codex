@@ -1,152 +1,154 @@
 # 04 — 工具系统设计
 
-> 工具是 Agent 与外部世界交互的唯一通道。本章剖析 Codex 的工具系统如何从定义到执行完成一次完整调用，包括分发路由、并行控制、审批流程和沙箱隔离。
+> 工具是 Agent 与外部世界交互的唯一通道。本章剖析 Codex 的工具系统如何从模型输出到实际执行完成一次完整调用，包括路由分发、并行控制、审批流程和沙箱隔离。
 
-## 1. 一次工具调用的完整旅程
+## 1. 整体架构与伪代码
 
-当 LLM 在回复中返回一个工具调用（如 `exec_command`），它会经过以下 5 个阶段：
+一个工具调用从 LLM 返回到执行完成，经过以下流程：
+
+```
+async fn handle_tool_call(response_item: ResponseItem) {
+    // 1. 解析：将模型输出转为统一的 ToolCall
+    let call = ToolRouter::build_tool_call(response_item);
+
+    // 2. 并行控制：按 tool_supports_parallel() 决定锁类型
+    let _lock = if router.tool_supports_parallel(&call.name) {
+        parallel_execution.read().await     // 共享锁，多个并行
+    } else {
+        parallel_execution.write().await    // 独占锁，串行
+    };
+
+    // 3. 分发：查找 handler，执行 hooks
+    let handler = registry.lookup(&call.name);
+    run_pre_tool_use_hooks();               // 可阻止执行
+    let result = handler.handle(call);      // 不同 handler 路径不同：
+    //   ├── UnifiedExecHandler  → ToolOrchestrator（审批+沙箱）
+    //   ├── ApplyPatchHandler   → ToolOrchestrator（审批+沙箱）
+    //   ├── McpHandler          → 直接执行（不经过 Orchestrator）
+    //   ├── ToolSearchHandler   → 直接执行
+    //   └── SpawnAgentHandler   → AgentControl
+    run_post_tool_use_hooks();              // 可修改输出
+
+    // 4. 返回结果，追加到对话历史
+    return result.to_response_item();
+}
+```
+
+关键认知：**不是所有工具都走审批和沙箱**。只有涉及文件系统/进程执行的工具（exec_command、apply_patch 等）才经过 `ToolOrchestrator` 的审批→沙箱→执行管线。MCP 工具、ToolSearch 等直接在 handler 内完成。
 
 ```mermaid
 graph TD
-    A[LLM 返回工具调用] --> B[ToolRouter<br/>解析 + 路由]
-    B --> C[ToolCallRuntime<br/>并行控制 + 取消]
-    C --> D[ToolRegistry<br/>Hooks + 分发]
-    D --> E[ToolOrchestrator<br/>审批 → 沙箱 → 执行]
-    E --> F[返回结果给 Agent Loop]
+    A[LLM 返回工具调用] --> B[ToolRouter<br/>解析为 ToolCall]
+    B --> C[ToolCallRuntime<br/>并行锁 + 取消]
+    C --> D[ToolRegistry<br/>hooks + handler 查找]
+
+    D --> E{handler 类型}
+    E -->|UnifiedExec / ApplyPatch| F[ToolOrchestrator<br/>审批 → 沙箱 → 执行]
+    E -->|MCP / ToolSearch| G[直接执行]
+    E -->|SpawnAgent| H[AgentControl]
+
+    F --> I[返回结果]
+    G --> I
+    H --> I
 ```
 
-| 阶段 | 组件 | 职责 |
-|------|------|------|
-| **解析** | ToolRouter | 将模型输出解析为 `ToolCall` 结构体 |
-| **并行** | ToolCallRuntime | 控制并行/串行执行，支持取消 |
-| **分发** | ToolRegistry | 查找 Handler、执行 pre/post hooks |
-| **执行** | ToolOrchestrator | 审批 → 选择沙箱 → 执行 → 失败重试 |
-| **返回** | - | 结果转为 `ResponseInputItem`，追加到对话历史 |
+**源码**: 工具模块在 [core/src/tools/](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/) 目录下。
 
 ## 2. ToolRouter：解析与路由
 
-每次采样请求时，Codex 都会**重新构建** ToolRouter（因为可用工具可能变化）。
+每次采样请求时，Codex **重新构建** ToolRouter（因为可用工具可能变化——MCP 服务器热重载、Skills 变更等）。
 
-### 2.1 构建流程
-
-```
-ToolRouter::from_config(tools_config, mcp_tools, ...)
-  → build_specs_with_discoverable_tools()    // 决定注册哪些工具
-    → codex_tools::build_tool_registry_plan()  // 外部 crate 生成计划
-    → 遍历计划，注册每个 handler
-  → 返回 (specs, registry) 
-  → 过滤 code-mode 工具
-  → 构建 ToolRouter { registry, specs, model_visible_specs }
-```
-
-### 2.2 解析工具调用
-
-`build_tool_call()` 将 LLM 的原始输出解析为统一的 `ToolCall` 结构：
+### 解析：4 种调用格式 → 统一 ToolCall
 
 ```rust
 pub struct ToolCall {
-    pub tool_name: ToolName,    // 工具标识
-    pub call_id: String,        // 调用唯一 ID
-    pub payload: ToolPayload,   // 调用参数
+    pub tool_name: ToolName,
+    pub call_id: String,
+    pub payload: ToolPayload,
 }
 ```
-
-模型可能返回 4 种不同格式的工具调用，全部统一为 `ToolPayload`：
 
 | 模型输出类型 | 转换为 | 示例 |
 |-------------|--------|------|
-| `FunctionCall` | `ToolPayload::Function` 或 `ToolPayload::Mcp` | exec_command、MCP 工具 |
-| `CustomToolCall` | `ToolPayload::Custom` | apply_patch |
-| `ToolSearchCall` | `ToolPayload::ToolSearch` | tool_search |
-| `LocalShellCall` | `ToolPayload::LocalShell` | local_shell |
+| `FunctionCall` | `Function` 或 `Mcp` | exec_command、MCP 工具 |
+| `CustomToolCall` | `Custom` | apply_patch |
+| `ToolSearchCall` | `ToolSearch` | tool_search |
+| `LocalShellCall` | `LocalShell` | local_shell |
 
-> 如果 FunctionCall 的名称匹配到已注册的 MCP 工具，会自动包装为 `Mcp` payload。
+> 如果 FunctionCall 的名称匹配到已注册的 MCP 工具，自动包装为 `Mcp` payload。
 
-**源码**: [core/src/tools/router.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/router.rs)
+**源码**: [tools/router.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/router.rs)
 
-## 3. ToolCallRuntime：并行与取消
+## 3. ToolCallRuntime：并行控制与取消
 
-### 3.1 并行控制：RwLock 模式
+### 3.1 并行判定：tool_supports_parallel()
 
-Codex 支持 LLM 在单次回复中返回多个工具调用。但并非所有工具都可以安全地并行执行。
+并行控制使用 `RwLock`，但判定依据是 `tool_supports_parallel()` 而**不是**工具是否只读：
 
 ```rust
-pub struct ToolCallRuntime {
-    router: Arc<ToolRouter>,
-    session: Arc<Session>,
-    turn_context: Arc<TurnContext>,
-    parallel_execution: Arc<RwLock<()>>,  // 关键：并行控制锁
+// parallel.rs:81
+let supports_parallel = self.router.tool_supports_parallel(&call.tool_name);
+if supports_parallel {
+    let _guard = self.parallel_execution.read().await;   // 共享锁
+    dispatch(call).await
+} else {
+    let _guard = self.parallel_execution.write().await;  // 独占锁
+    dispatch(call).await
 }
 ```
 
-| 工具类型 | 锁类型 | 行为 |
-|---------|--------|------|
-| 只读命令（如 `ls`、`cat`） | **读锁** | 多个并行执行 |
-| 写入命令（如 `apply_patch`） | **写锁** | 独占执行，其他等待 |
+`tool_supports_parallel()` 在注册工具时通过 `push_spec_with_parallel_support()` 标记，而不是运行时动态判断。大多数内置工具都支持并行。
 
-> **知识点 — `RwLock`**: `RwLock`（读写锁）允许多个线程同时读（共享），但写入时必须独占。Codex 用它实现「只读工具可以并行，写入工具必须串行」的策略。
+> **知识点 — `RwLock`**: `RwLock`（读写锁）允许多个线程同时获取读锁（共享），但写锁是独占的。这里 Codex 用读锁表示"可以并行"，写锁表示"必须独占"。
 
 ### 3.2 取消机制
 
-每个工具调用通过 `CancellationToken` 支持取消（用户按 Ctrl+C 中断）：
+每个工具调用通过 `CancellationToken` 支持取消：
 
 ```
 tokio::select! {
-    _ = cancellation_token.cancelled() => 返回 AbortedToolOutput,
-    result = 工具执行 => 返回结果,
+    _ = cancellation_token.cancelled() => AbortedToolOutput,
+    result = dispatch(call) => result,
 }
 ```
 
-**源码**: [core/src/tools/parallel.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/parallel.rs)
+**源码**: [tools/parallel.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/parallel.rs)
 
 ## 4. ToolRegistry：Handler 注册与分发
 
-### 4.1 Handler 注册
+### 4.1 注册模式
 
-所有工具通过 `ToolRegistryBuilder` 注册：
+通过 `ToolRegistryBuilder` 分别注册工具定义（spec）和处理器（handler）：
 
 ```
-builder.push_spec(tool_spec)           // 注册工具定义（给 LLM 看）
-builder.register_handler(name, handler) // 注册处理器（给 Codex 执行）
-builder.build() → (specs, registry)     // 构建完成
+builder.push_spec(tool_spec)            // 工具定义（给 LLM 看）
+builder.register_handler(name, handler) // 处理器（给 Codex 执行）
+builder.build() → (specs, registry)
 ```
 
-定义（spec）和处理器（handler）是**解耦**的：同一个 handler 可以服务多个工具名，一个工具定义也可以在不同配置下映射到不同 handler。
+定义和处理器**解耦**：同一个 handler 可以服务多个工具名。例如 `UnifiedExecHandler` 同时处理 `exec_command` 和 `write_stdin`。
 
-### 4.2 Handler 特征
-
-每个工具处理器实现 `ToolHandler` trait：
-
-```rust
-pub trait ToolHandler: Send + Sync {
-    type Output: ToolOutput;
-    fn kind(&self) -> ToolKind;                           // Function / Mcp
-    fn is_mutating(&self, invocation: &ToolInvocation) -> bool;  // 是否写操作
-    fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output>;
-}
-```
-
-### 4.3 分发流程
+### 4.2 分发流程
 
 `registry.dispatch_any()` 是中央分发器：
 
 ```
 dispatch_any(invocation)
   1. 查找 handler（按 tool_name）
-  2. 检查 is_mutating → 若是，等待写锁
+  2. is_mutating 检查 → 若是，等待 tool_call_gate（不是 RwLock）
   3. 执行 pre_tool_use hooks → 若 blocked，终止
-  4. handler.handle(invocation) → 执行工具
+  4. handler.handle(invocation)
   5. 执行 post_tool_use hooks → 可修改输出
   6. 返回 AnyToolResult
 ```
 
-**Hooks 注入点**：用户可以通过 `config.toml` 配置 hooks，在工具执行前后插入自定义逻辑（如日志、审计）。
+注意：`is_mutating()` 检查和并行锁是**两个独立的机制**。`is_mutating()` 控制的是 `tool_call_gate`（一个 readiness flag），用于等待前一个变更操作完成后再开始新的变更。这和 `RwLock` 的并行/串行控制不同。
 
-**源码**: [core/src/tools/registry.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/registry.rs)
+**源码**: [tools/registry.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/registry.rs)
 
 ## 5. ToolOrchestrator：审批 → 沙箱 → 执行
 
-这是最复杂的一层，处理安全相关的全部逻辑。
+**只有部分 handler 使用 Orchestrator**。具体来说，实现了 `ToolRuntime` trait 的工具（如 shell、apply_patch）才会走这个管线。MCP、ToolSearch、Agent 工具不走 Orchestrator。
 
 ### 5.1 三步管线
 
@@ -167,151 +169,110 @@ graph LR
 
 ### 5.2 审批（Approval）
 
-审批系统决定一个工具调用是否需要用户确认：
-
 ```rust
 enum ExecApprovalRequirement {
-    Skip { bypass_sandbox: bool },     // 自动批准（已知安全）
-    NeedsApproval { reason: String },  // 需要用户确认
-    Forbidden { reason: String },      // 禁止执行
+    Skip { bypass_sandbox: bool },       // 自动批准（匹配 prefix_rule）
+    NeedsApproval { reason: String },    // 需要用户/Guardian 确认
+    Forbidden { reason: String },        // 禁止执行
 }
 ```
 
-判断依据包括：
-- 命令是否匹配已批准的 `prefix_rule`
-- 执行策略（ExecPolicy）中的规则
-- 沙箱权限设置（`sandbox_permissions` 参数）
+审批结果缓存在 `ApprovalStore`，但规则比较细：
 
-审批结果会被**缓存**到 `ApprovalStore`，同一 session 内相同命令不会重复询问。
+- **只有 `ApprovedForSession` 才会被缓存复用**，普通 `Approved` 不会
+- Shell 的 approval key 由 `cmd + cwd + sandbox_permissions + additional_permissions` 组成，不是简单的命令字符串
+- ApplyPatch 按**文件路径**独立缓存，不是按整个补丁
+
+**源码**: [tools/sandboxing.rs:67-113](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/sandboxing.rs#L67-L113)
 
 ### 5.3 沙箱（Sandbox）
 
-通过审批后，`SandboxManager` 选择合适的沙箱类型：
-
 | 平台 | 沙箱实现 | 说明 |
 |------|---------|------|
-| macOS | Seatbelt (`sandbox-exec`) | 使用 `.sbpl` 配置限制文件/网络访问 |
+| macOS | Seatbelt (`sandbox-exec`) | `.sbpl` 配置限制文件/网络 |
 | Linux | Landlock + Bubblewrap | 内核级文件访问控制 + 用户空间隔离 |
 | Windows | Restricted Token | 降权进程 Token |
 
-沙箱的 `SandboxAttempt` 结构包含了所有策略：
-
-```
-SandboxAttempt {
-    sandbox: SandboxType,           // Seatbelt / Landlock / None
-    policy: SandboxPolicy,          // workspace-write / read-only / full-access
-    file_system_policy,             // 文件读写白名单
-    network_policy,                 // 网络访问控制
-    ...
-}
-```
-
 ### 5.4 失败重试
 
-如果工具在沙箱中执行失败（`SandboxErr::Denied`），Orchestrator 会：
-
-1. 检查该工具是否支持权限提升（`escalate_on_failure()`）
+如果工具在沙箱中被拒绝（`SandboxErr::Denied`）：
+1. 检查工具是否支持权限提升（`escalate_on_failure()`）
 2. 向用户请求重试审批
 3. 用 `SandboxType::None`（无沙箱）重新执行
 
-这就是为什么用户有时会看到类似「Command failed due to sandbox. Do you want to run without restrictions?」的提示。
+**源码**: [tools/orchestrator.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/orchestrator.rs)
 
-**源码**: [core/src/tools/orchestrator.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/orchestrator.rs), [core/src/tools/sandboxing.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/sandboxing.rs)
+## 6. 核心工具 Handler
 
-## 6. 核心工具处理器
+### 6.1 exec_command — UnifiedExecHandler
 
-### 6.1 Shell（exec_command）
-
-最常用的工具。调用链：
+`exec_command` 是最常用的工具。当前主分支由 `UnifiedExecHandler` 处理（不是旧的 `ShellHandler`）：
 
 ```
-ShellHandler.handle()
-  → 解析 ShellToolCallParams（cmd, workdir, sandbox_permissions...）
-  → ShellRuntime.run()
-    → 构建沙箱命令（加 seatbelt/landlock 包装）
-    → 执行进程
-    → 捕获 stdout/stderr
-    → 截断过长输出（max_output_tokens）
-    → 返回 ExecToolCallOutput
+UnifiedExecHandler.handle()
+  → 解析参数（cmd, workdir, sandbox_permissions, tty, yield_time_ms...）
+  → ToolOrchestrator::run()
+    → 审批检查（ExecApprovalRequirement）
+    → 选择沙箱（Seatbelt / Landlock / None）
+    → UnifiedExecProcessManager 执行命令
+      → 创建进程（可选 PTY）
+      → 等待输出（受 yield_time_ms 控制）
+      → 截断过长输出（max_output_tokens）
+    → 返回 ExecToolCallOutput（含 session_id，支持后续 write_stdin）
 ```
 
-**源码**: [core/src/tools/handlers/shell.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/shell.rs)
+`exec_command` 和 `write_stdin` 共用同一个 `UnifiedExecHandler`。`write_stdin` 用于向一个运行中的进程（通过 `session_id` 标识）写入输入。
 
-### 6.2 ApplyPatch（文件操作）
+**源码**: [tools/handlers/unified_exec.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/unified_exec.rs), [tools/spec.rs:132-145](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/spec.rs#L132-L145)
 
-接收自由文本格式的补丁，创建或修改文件：
+### 6.2 apply_patch — 文件创建与修改
 
 ```
 ApplyPatchHandler.handle()
-  → 解析补丁内容（新建/修改/删除文件列表）
-  → 按文件计算审批 key（每个文件独立审批缓存）
-  → ApplyPatchRuntime.run()
-    → 执行补丁（create/modify/delete）
-    → 返回成功/失败
+  → 解析补丁（新建/修改/删除文件列表）
+  → 按文件路径计算 approval keys（每文件独立缓存）
+  → ToolOrchestrator::run()
+    → 审批（每个文件路径独立）
+    → 沙箱执行补丁
+  → 返回成功/失败
 ```
 
-**源码**: [core/src/tools/handlers/apply_patch.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/apply_patch.rs)
+**源码**: [tools/handlers/apply_patch.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/apply_patch.rs)
 
-### 6.3 MultiAgent（spawn_agent / send_input / wait_agent / close_agent）
+### 6.3 MCP 工具 — 直接执行，不走 Orchestrator
 
-子 Agent 协调工具，详见第 06 章。简要调用链：
+```
+McpHandler.handle()
+  → 通过 McpConnectionManager 调用外部 MCP 服务器
+  → 直接返回结果（无审批、无沙箱）
+```
+
+MCP 工具的安全性由 MCP 服务器自身负责，Codex 不额外加沙箱。
+
+**源码**: [tools/handlers/mcp.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/mcp.rs)
+
+### 6.4 多 Agent 工具 — spawn_agent / send_input / wait_agent / close_agent
+
+子 Agent 协调工具，详见第 06 章。
 
 ```
 SpawnAgentHandler.handle()
   → AgentControl::spawn_agent()
-    → 创建新的 CodexThread
-    → 分配独立 Session
+    → 创建新的 CodexThread + Session
     → 返回 agent_id
 ```
 
-**源码**: [core/src/tools/handlers/multi_agents_v2/](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/multi_agents_v2)
+**源码**: [tools/handlers/multi_agents_v2/](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/handlers/multi_agents_v2)
 
-## 7. 工具系统架构全景
+## 7. 本章小结
 
-```mermaid
-graph TD
-    subgraph 定义层
-        SPEC[ToolSpec<br/>JSON Schema 定义]
-        PLAN[ToolRegistryPlan<br/>哪些工具可用]
-    end
-
-    subgraph 路由层
-        ROUTER[ToolRouter<br/>解析 + 路由]
-        REG[ToolRegistry<br/>Handler 查找 + Hooks]
-    end
-
-    subgraph 执行层
-        RUNTIME[ToolCallRuntime<br/>并行控制]
-        ORCH[ToolOrchestrator<br/>审批 + 沙箱]
-    end
-
-    subgraph Handler 层
-        SHELL[ShellHandler]
-        PATCH[ApplyPatchHandler]
-        AGENT[MultiAgentHandler]
-        MCP_H[McpHandler]
-    end
-
-    SPEC --> ROUTER
-    PLAN --> REG
-    ROUTER --> RUNTIME
-    RUNTIME --> REG
-    REG --> ORCH
-    ORCH --> SHELL
-    ORCH --> PATCH
-    ORCH --> AGENT
-    ORCH --> MCP_H
-```
-
-## 8. 本章小结
-
-| 组件 | 职责 | 源码 |
-|------|------|------|
-| **ToolRouter** | 解析模型输出为 ToolCall，统一 4 种调用格式 | [tools/router.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/router.rs) |
-| **ToolCallRuntime** | 并行/串行控制（RwLock），取消支持 | [tools/parallel.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/parallel.rs) |
-| **ToolRegistry** | Handler 注册、查找、pre/post hooks | [tools/registry.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/registry.rs) |
-| **ToolOrchestrator** | 审批 → 沙箱选择 → 执行 → 失败重试 | [tools/orchestrator.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/orchestrator.rs) |
-| **ApprovalStore** | 审批结果缓存，避免重复询问 | [tools/sandboxing.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/sandboxing.rs) |
+| 组件 | 职责 | 关键细节 | 源码 |
+|------|------|---------|------|
+| **ToolRouter** | 解析 4 种调用格式为统一 ToolCall | 每次采样重建 | [tools/router.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/router.rs) |
+| **ToolCallRuntime** | 并行控制 + 取消 | 按 `tool_supports_parallel()` 判定，不是按读写 | [tools/parallel.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/parallel.rs) |
+| **ToolRegistry** | handler 查找 + hooks | `is_mutating` 控制 gate，与并行锁独立 | [tools/registry.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/registry.rs) |
+| **ToolOrchestrator** | 审批→沙箱→执行→重试 | **仅部分 handler 使用**（shell、patch） | [tools/orchestrator.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/orchestrator.rs) |
+| **ApprovalStore** | 审批缓存 | 只缓存 `ApprovedForSession`；key 含 cmd+cwd+permissions | [tools/sandboxing.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/sandboxing.rs) |
 
 ---
 
