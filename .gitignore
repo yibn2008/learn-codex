@@ -10,3 +10,4 @@ tmp-todomvc/
 
 # OS
 .DS_Store
+.env

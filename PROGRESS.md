@@ -109,3 +109,35 @@
 - **状态调整**:
   - 第 02 章设为 `DRAFT`
 - **下一步**: 用户 review 第 02 章 → 然后进入第 03 章「工具系统设计」
+
+### Round 6 (2026-04-12)
+- **目标**: 抓取完整 API 请求体（含 tools 定义），重构第 02 章
+- **完成**:
+  - [x] 通过自定义 model_provider（`supports_websockets=false`）+ Node.js 代理成功抓取完整 API 请求
+  - [x] 抓到 3 轮完整请求/响应（含 77 个工具定义、14K instructions、多轮 messages）
+  - [x] 将附录子页面移到 `wiki/02-appendix/` 子目录
+  - [x] 从 index.html 侧边栏移除附录页面
+- **产出**:
+  - `diagrams/todomvc-capture/0001~0003-*.json` — 完整的 3 轮 API 请求/响应 dump（已 gitignore）
+  - `scripts/capture-proxy-v2.mjs` — 改进版代理（替换 auth + 拒绝 WS）
+  - `wiki/02-appendix/` — 附录子目录
+- **关键发现**:
+  - 正确的抓包方法：自定义 `model_providers` 配置 `supports_websockets=false` + Node.js 代理替换 auth
+  - 单次请求包含 77 个工具定义（16 核心 + 61 GitHub MCP）
+  - 每轮请求都携带完整的 instructions（14,732 字符）和所有工具定义
+- **抓包命令参考**:
+  ```bash
+  # 1. 启动代理
+  node scripts/capture-proxy-v2.mjs --port 9999 --out-dir ./diagrams/todomvc-capture &
+  # 2. 执行任务
+  export OPENAI_API_KEY=$(grep OPENAI_API_KEY .env | cut -d= -f2)
+  codex exec \
+    -c 'model_providers.capture.name="Capture"' \
+    -c 'model_providers.capture.base_url="http://localhost:9999"' \
+    -c 'model_providers.capture.wire_api="responses"' \
+    -c 'model_providers.capture.supports_websockets=false' \
+    -c 'model_providers.capture.env_key="OPENAI_API_KEY"' \
+    -c 'model_provider="capture"' \
+    "your task"
+  ```
+- **下一步**: 基于完整抓包数据重写第 02 章，逐条消息注解
