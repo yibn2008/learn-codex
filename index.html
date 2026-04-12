@@ -426,12 +426,12 @@
       return `<pre><code class="language-${lang || ''}">${esc}</code></pre>`;
     };
     renderer.link = function({ href, title, text }) {
-      if (href) {
-        // Match wiki internal links: 02-xxx.md, ../02-xxx.md, 02-appendix/02a-xxx.md
-        const mdMatch = href.match(/(?:\.\.\/)?(\d{2}[a-z]?)-[^/]*\.md$/) || href.match(/02-appendix\/(02[a-z])-/);
-        if (mdMatch) {
-          const id = mdMatch[1];
-          return `<a href="#${id}" onclick="loadPage('${id}');return false;">${text}</a>`;
+      if (href && !href.startsWith('http')) {
+        // Resolve relative paths and find matching page by file path suffix
+        const clean = href.replace(/^\.\.\//, '');
+        const match = pages.find(p => p.file.endsWith(clean) || p.file.endsWith('/' + clean));
+        if (match) {
+          return `<a href="#${match.id}" onclick="loadPage('${match.id}');return false;">${text}</a>`;
         }
       }
       const ext = href && href.startsWith('http') ? ' target="_blank" rel="noopener"' : '';
