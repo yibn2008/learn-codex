@@ -258,26 +258,6 @@ Codex 的 Rust 部分是一个大型 Cargo workspace（见 [Cargo.toml:1-91](htt
 | **工具库** | `utils/*` (22 个) | 绝对路径、缓存、图片处理、PTY、模糊匹配、TLS、模板渲染等 |
 | **其他** | `async-utils`, `ansi-escape`, `arg0`, `terminal-detection`, `debug-client`, `codex-experimental-api-macros`, `v8-poc` | 异步工具、ANSI 转义、终端检测、调试客户端、实验性宏、V8 概念验证 |
 
-### 3.1 从总体结构看，最容易遗漏的三层
-
-如果只看“CLI + core + TUI”这条主线，很容易漏掉下面三类对理解 Codex 很关键的结构：
-
-1. **TUI 背后其实站着一个 App Server**
-
-   现在的 TUI 并不是直接把用户输入塞进 `codex-core`。默认情况下，它会先启动一个 **embedded app server**，再通过 app-server client 与后端通信（[tui/src/lib.rs:654-672](https://github.com/openai/codex/blob/main/codex-rs/tui/src/lib.rs#L654-L672), [1059-1073](https://github.com/openai/codex/blob/main/codex-rs/tui/src/lib.rs#L1059-L1073)）。这意味着：
-
-   - TUI 更像前端壳层
-   - App Server 是统一的请求分发后端
-   - IDE 集成和 TUI 共享了大量后端能力
-
-2. **插件 / Skills / Connectors 是一条独立的扩展轴**
-
-   第一眼看仓库时，很多人会把注意力全部放到 `core/`。但从产品能力上看，`skills`、`core-skills`、`plugin`、`connectors`、`instructions` 这条线同样重要，它决定了 Agent 能看见什么指令、能连接什么外部系统、能以什么方式扩展自身。
-
-3. **Cloud / Remote 模块说明它不只是“本地命令行工具”**
-
-   `cloud-*`、`realtime-webrtc`、`network-proxy`、`responses-api-proxy` 这些 crate 表明，Codex 的设计目标已经超出“本地 TUI + 一次性调用模型 API”。它同时在兼容云任务、远程连接和更复杂的运行环境。
-
 > **知识点 — crate**: `crate` 是 Rust 中最基本的编译与发布单元。可以把它理解成“一个独立的 Rust 包/模块边界”。带 `main()` 的叫 binary crate，可执行；提供库接口的叫 library crate，可被其他 crate 依赖。Codex 的 `codex-rs/` 就是一个包含大量 crate 的 workspace。
 
 > **知识点 — Cargo Workspace**: Rust 的 Cargo workspace 允许在一个仓库中管理多个相关的 crate（库/包）。它们共享同一个 `Cargo.lock` 锁文件和编译产物目录 `target/`，既保证依赖版本一致，又允许独立编译和测试单个 crate。
