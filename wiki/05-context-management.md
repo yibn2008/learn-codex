@@ -35,6 +35,8 @@ async fn run_turn(sess, turn_context, user_input) {
 }
 ```
 
+**源码**: [codex.rs:5971-6483](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5971-L6483)（run_turn 中上下文相关流程）, [context_manager/history.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs)
+
 > ⚠ **已知局限**: Pre-turn 压缩在差分更新和用户输入记录**之前**执行。这意味着如果 pre-turn 压缩后剩余空间刚好够用，但差分更新 + 用户输入又把 Token 推过阈值，当前不会再次触发压缩——这需要等到 mid-turn 阶段才处理。源码中有明确 TODO 标注此问题（[codex.rs:5985-5988](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5985-L5988)）。
 
 ```mermaid

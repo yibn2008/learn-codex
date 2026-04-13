@@ -5,8 +5,7 @@
 ## 项目信息
 
 - **源码仓库**: https://github.com/openai/codex
-- **源码本地路径**: `/Users/zoujie.wu/workspace/codex-source/`
-- **产出仓库**: `/Users/zoujie.wu/workspace/learn-codex/`
+- **源码本地路径**: `.codex-source/`（运行 `./setup.sh` 自动克隆）
 - **项目目标**: 产出一套中文 Wiki，深入分析 Codex CLI 的 AI Agent 工作机制
 
 ## Wiki 结构规划（演进式，随分析深入调整）
@@ -50,7 +49,7 @@
   - [x] 创建 wiki/00-project-overview.md（项目全景概览，DRAFT 状态）
 - **产出**:
   - `PROJECT.md` — 项目总目标，包含分析维度、章节规划、工作流程、质量标准
-  - `wiki/00-project-overview.md` — 7 个章节：Codex 简介、单仓结构、88 Crate 全景分类（含 Mermaid 图）、启动链路全追踪（含时序图）、核心依赖关系图、构建与任务工具链、小结
+  - `wiki/00-project-overview.md` — 7 个章节：Codex 简介、单仓结构、Crate 全景分类（含 Mermaid 图）、启动链路全追踪（含时序图）、核心依赖关系图、构建与任务工具链、小结
 - **发现的问题**:
   - `codex-core` 是最大的 crate（398 个 .rs 文件，核心 codex.rs 7931 行），官方也在 AGENTS.md 中提醒要控制其膨胀
   - 仓库有多个 fork 的第三方依赖（ratatui, tungstenite, crossterm），说明对底层有定制需求

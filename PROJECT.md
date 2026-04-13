@@ -8,9 +8,9 @@
 
 - **分析目标**: OpenAI Codex CLI — 一个运行在本地的编码 AI Agent
 - **源码仓库**: https://github.com/openai/codex
-- **源码本地路径**: `/Users/zoujie.wu/workspace/codex-source/`
-- **技术栈**: TypeScript (入口包装) + Rust (核心引擎，89 个 crate，1,418 个 .rs 文件)
-- **核心文件**: `codex-rs/core/src/codex.rs` (7,931 行) — 包含 Agent 主循环
+- **源码本地路径**: `.codex-source/`（运行 `./setup.sh` 自动克隆）
+- **技术栈**: TypeScript (入口包装) + Rust (核心引擎)
+- **核心文件**: `codex-rs/core/src/codex.rs` — 包含 Agent 主循环
 
 ## 分析维度
 

@@ -22,6 +22,8 @@ constraints = cloud_requirements + admin_requirements;
 final_config = apply_constraints(config_values, constraints);
 ```
 
+**源码**: [config/src/config_toml.rs](https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs)（配置解析）, [core/src/config_loader/](https://github.com/openai/codex/blob/main/codex-rs/core/src/config_loader/)（分层合并）
+
 ```mermaid
 graph TD
     subgraph 值层
@@ -101,6 +103,8 @@ Features::from_sources(config_features, cli_features)
     → 应用约束层的强制启用/禁用
   → 最终的 ManagedFeatures 挂载到 Config 上
 ```
+
+**源码**: [features/src/lib.rs](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs)
 
 约束层（如云端推送的 `managed_features`）可以**强制覆盖**用户的 feature 设置。
 

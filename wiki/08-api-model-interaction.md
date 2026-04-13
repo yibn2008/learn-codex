@@ -59,6 +59,8 @@ graph TD
         → 写入缓存并返回
 ```
 
+**源码**: [models-manager/src/manager.rs](https://github.com/openai/codex/blob/main/codex-rs/models-manager/src/manager.rs)
+
 `ModelInfo` 包含模型的能力标记（是否支持 reasoning、工具调用、图片输入等）、token 限制、定价信息，供 Agent Loop 在构建请求时做决策。
 
 ### 2.2 供应商注册
@@ -126,6 +128,8 @@ async fn stream(prompt) {
 }
 ```
 
+**源码**: [client.rs:1434-1482](https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs#L1434-L1482)
+
 | 传输 | 协议 | 优势 | 劣势 |
 |------|------|------|------|
 | **WebSocket** | `wss://` + `response.create` | 低延迟、连接复用、支持 prewarm | 部分代理/防火墙不支持 |
@@ -187,6 +191,8 @@ response.content.delta    → 内容增量（流式文本）
 response.function_call_arguments.delta → 工具调用参数增量
 response.completed        → 响应结束（含 usage 统计）
 ```
+
+**源码**: [codex-api/src/](https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/)（ResponseEvent 定义与解析）
 
 Agent Loop 消费这些事件来驱动工具执行和 UI 更新（详见 [03 — Agent Loop](03-agent-loop.md)）。
 

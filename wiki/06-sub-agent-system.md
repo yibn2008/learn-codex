@@ -12,7 +12,7 @@ async fn spawn_agent(parent_session, message, role, model) {
     // 1. 检查深度限制
     if depth >= max_agent_depth { return error; }
 
-    // 2. 预留资源（RAII 模式，失败自动释放）
+    // 2. 预留资源（RAII 模式——资源获取即初始化，失败自动释放）
     let reservation = registry.reserve_spawn_slot();
     let nickname = registry.reserve_nickname();  // 随机选名，如 "Euler"
 
@@ -39,6 +39,8 @@ fn send_message(target, message) {
     // → target 在下一轮 Turn 的 drain_pending_input 中读取
 }
 ```
+
+**源码**: [agent/control.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/agent/control.rs)（生成与生命周期管理）, [agent/mailbox.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/agent/mailbox.rs)（通信）
 
 ```mermaid
 graph TD
@@ -87,7 +89,7 @@ pub struct AgentControl {
 ```
 spawn_agent_internal()
   1. 检查深度限制（exceeds_thread_spawn_depth_limit）
-  2. 预留资源（SpawnReservation — RAII 守卫）
+  2. 预留资源（SpawnReservation — RAII 守卫，离开作用域时自动释放）
      ├── 预留昵称（从 agent_names.txt 随机选）
      └── 预留路径（parent/child 层级）
   3. 决定 fork 模式：

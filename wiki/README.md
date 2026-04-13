@@ -8,7 +8,7 @@
 
 | 章节 | 你将了解 |
 |------|---------|
-| [00 - 项目概览](00-project-overview.md) | Codex 是什么？89 个 Rust Crate 的分层结构、TypeScript → Rust 迁移与启动链路 |
+| [00 - 项目概览](00-project-overview.md) | Codex 是什么？Rust Crate 的分层结构、TypeScript → Rust 迁移与启动链路 |
 | [01 - 架构总览](01-architecture-overview.md) | 四层架构（表示层→会话管理→Agent 核心→能力层）、6 个核心抽象、Op/Event 协议 |
 | [02 - 提示词与工具解析](02-prompt-and-tools.md) | 通过真实抓包数据，逐层拆解发给 LLM 的完整请求：instructions + tools + messages |
 
@@ -37,8 +37,7 @@
 OpenAI Codex CLI — 运行在本地的编码 AI Agent
 
 技术栈    TypeScript (入口) + Rust (核心引擎) + Python/TS SDK
-代码规模  89 个 Rust Crate，1,418 个 .rs 文件
-核心文件  codex.rs — 7,931 行（Agent 主循环）
+核心文件  codex.rs（Agent 主循环）
 支持平台  macOS / Linux / Windows (arm64 + x64)
 运行模式  交互式 TUI、非交互 Exec、App Server (IDE)、MCP Server
 ```

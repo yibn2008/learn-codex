@@ -5,6 +5,9 @@
 # Intermediate analysis artifacts (local only)
 diagrams/
 
+# Codex source checkout (created by setup.sh)
+.codex-source/
+
 # Temp task outputs
 tmp-todomvc/
 

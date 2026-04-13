@@ -34,7 +34,11 @@ codex mcp-server
 
 ## 2. 单仓结构总览
 
-Codex 采用 **Monorepo（单仓）** 架构，TypeScript 与 Rust 代码共存于一个仓库中。下面的目录树列出了仓库中**每个目录**的作用：
+Codex 采用 **Monorepo（单仓）** 架构，TypeScript 与 Rust 代码共存于一个仓库中。
+
+- **源码仓库**: https://github.com/openai/codex
+
+下面的目录树列出了仓库中**每个目录**的作用：
 
 ```
 codex/                              # 仓库根目录
@@ -45,14 +49,13 @@ codex/                              # 仓库根目录
 │   ├── scripts/                   # 发布与构建脚本
 │   └── vendor/                    # 本地预编译二进制（回退用）
 │
-├── codex-rs/                       # Rust 核心引擎（89 crate 的 workspace）
+├── codex-rs/                       # Rust 核心引擎（Cargo workspace）
 │   ├── Cargo.toml                 # workspace 成员与编译优化定义
 │   │
 │   │  ── 入口与 UI ──
 │   ├── cli/                       # CLI 命令路由（clap 参数解析 + 子命令分发）
 │   ├── tui/                       # 终端交互界面（Ratatui 框架）
 │   ├── app-server/                # IDE 集成 JSON-RPC 服务器
-│   ├── exec-server/               # 沙箱命令执行服务（独立进程）
 │   ├── mcp-server/                # MCP 协议服务器模式
 │   │
 │   │  ── Agent 核心 ──
@@ -76,6 +79,7 @@ codex/                              # 仓库根目录
 │   ├── keyring-store/             # OS 密钥环集成
 │   │
 │   │  ── 安全与沙箱 ──
+│   ├── exec-server/               # 沙箱命令执行服务（独立进程）
 │   ├── sandboxing/                # 跨平台沙箱策略管理
 │   ├── linux-sandbox/             # Linux Landlock 沙箱实现
 │   ├── windows-sandbox-rs/        # Windows AppContainer 沙箱实现
@@ -192,7 +196,7 @@ codex/                              # 仓库根目录
 | 目录/文件 | 语言/技术 | 说明 |
 |-----------|----------|------|
 | `codex-cli/` | TypeScript | npm 全局命令入口，检测平台后 `spawn` 启动 Rust 二进制，自身不含业务逻辑 |
-| `codex-rs/` | Rust | **核心引擎**，包含 89 个 crate 的 Cargo workspace，承载全部 Agent 逻辑 |
+| `codex-rs/` | Rust | **核心引擎**，Cargo workspace，承载全部 Agent 逻辑 |
 | `sdk/typescript/` | TypeScript | 官方 TypeScript SDK，供开发者以编程方式集成 Codex |
 | `sdk/python/` | Python | 官方 Python SDK |
 | `sdk/python-runtime/` | Python | Python SDK 运行时支持 |
@@ -232,67 +236,20 @@ Codex 负责人 Thibault Sottiaux 在 [The Pragmatic Engineer 的采访](https:/
 
 > **知识点 — `spawn`**: 在 `codex.js` 中，Node.js 通过 `child_process.spawn()` 启动 Rust 编译的原生二进制程序作为子进程。子进程继承了父进程的标准输入/输出，因此用户的键盘输入和终端输出可以直接传递。
 
-## 3. Rust 工作空间：89 个 Crate 全景
+## 3. Rust 工作空间：Crate 全景
 
-Codex 的 Rust 部分是一个包含 **89 个 crate** 的 Cargo workspace（见 [Cargo.toml:1-91](https://github.com/openai/codex/blob/main/codex-rs/Cargo.toml#L1-L91)）。这些 crate 按功能可以分为以下几大类：
+Codex 的 Rust 部分是一个大型 Cargo workspace（见 [Cargo.toml:1-91](https://github.com/openai/codex/blob/main/codex-rs/Cargo.toml#L1-L91)）。这些 crate 按功能可以分为以下几大类：
 
-### 图 0.1: 89 个 Crate 的分层架构
-
-这里的 `crate` 可以理解为 Rust workspace 里的一个独立子包/编译单元；有些 crate 会产出可执行程序，有些则作为库被其他 crate 依赖。
-
-下图展示了 Codex 的 crate 按**调用层级**的分布，自上而下调用：
-
-```mermaid
-graph TD
-    subgraph 入口层
-        CLI[codex-cli]
-        TUI[codex-tui]
-        APP[codex-app-server]
-    end
-
-    subgraph 核心层
-        CORE[codex-core<br/>398 个文件]
-    end
-
-    subgraph 能力层
-        direction LR
-        TOOLS[工具与执行<br/>exec, tools, skills,<br/>mcp, apply-patch]
-        SAFETY[安全与沙箱<br/>sandboxing, execpolicy,<br/>linux-sandbox]
-        MODEL[模型与 API<br/>codex-api, login,<br/>models-manager]
-    end
-
-    subgraph 基础层
-        direction LR
-        PROTO[protocol]
-        CONFIG[config]
-        HOOKS[hooks]
-        FEAT[features]
-        STATE[state]
-    end
-
-    CLI --> CORE
-    TUI --> CORE
-    APP --> CORE
-    CORE --> TOOLS
-    CORE --> SAFETY
-    CORE --> MODEL
-    TOOLS --> PROTO
-    SAFETY --> PROTO
-    MODEL --> PROTO
-    TOOLS --> CONFIG
-    SAFETY --> CONFIG
-```
-
-> 这张图是“阅读视角”的分层，不是 Cargo.toml 中的官方分组。`codex-core` 是中间枢纽，向上被 `cli`、`tui`、`app-server` 等入口 crate 调用，向下再组合模型、工具、沙箱等能力。
+> 这里的 `crate` 可以理解为 Rust workspace 里的一个独立子包/编译单元；有些 crate 会产出可执行程序，有些则作为库被其他 crate 依赖。架构层面的分层关系详见 [01 — 架构总览](01-architecture-overview.md)。
 
 ### Crate 分类详表
 
 | 类别 | Crate 名称 | 职责 |
 |------|-----------|------|
-| **入口层** | `cli`, `tui`, `app-server`, `exec-server`, `mcp-server` | 命令路由、终端 UI、IDE JSON-RPC 服务、沙箱执行服务、MCP 服务器 |
+| **入口层** | `cli`, `tui`, `app-server`, `mcp-server` | 命令路由、终端 UI、IDE JSON-RPC 服务、MCP 服务器 |
 | **Agent 核心** | `core`, `protocol`, `config`, `state`, `hooks` | Agent 主循环、协议定义、配置管理、会话状态持久化、执行钩子 |
 | **工具与执行** | `exec`, `tools`, `skills`, `core-skills`, `codex-mcp`, `rmcp-client`, `apply-patch`, `shell-command`, `code-mode`, `file-search`, `git-utils` | 命令执行、工具注册/分发、MCP 协议、文件补丁、代码模式、文件搜索、Git 操作 |
-| **安全与沙箱** | `sandboxing`, `execpolicy`, `execpolicy-legacy`, `linux-sandbox`, `windows-sandbox-rs`, `process-hardening`, `secrets`, `keyring-store`, `shell-escalation` | 沙箱管理、执行策略、Landlock/AppContainer 沙箱、进程加固、密钥保护、提权检测 |
+| **安全与沙箱** | `exec-server`, `sandboxing`, `execpolicy`, `execpolicy-legacy`, `linux-sandbox`, `windows-sandbox-rs`, `process-hardening`, `secrets`, `keyring-store`, `shell-escalation` | 沙箱命令执行服务、沙箱管理、执行策略、Landlock/AppContainer 沙箱、进程加固、密钥保护、提权检测 |
 | **模型与 API** | `codex-api`, `codex-client`, `backend-client`, `login`, `models-manager`, `ollama`, `lmstudio`, `model-provider-info`, `chatgpt`, `codex-backend-openapi-models` | API 客户端、认证、模型管理、多供应商适配、OpenAPI 模型定义 |
 | **协议与通信** | `protocol`, `app-server-protocol`, `app-server-client`, `app-server-test-client`, `stdio-to-uds` | Op/Event 协议、JSON-RPC 协议、测试客户端、Stdio ↔ UDS 桥接 |
 | **基础设施** | `analytics`, `otel`, `features`, `rollout`, `feedback`, `response-debug-context` | 遥测、OpenTelemetry、Feature Flags、会话记录持久化、用户反馈、调试上下文 |
@@ -321,7 +278,7 @@ graph TD
 
    `cloud-*`、`realtime-webrtc`、`network-proxy`、`responses-api-proxy` 这些 crate 表明，Codex 的设计目标已经超出“本地 TUI + 一次性调用模型 API”。它同时在兼容云任务、远程连接和更复杂的运行环境。
 
-> **知识点 — crate**: `crate` 是 Rust 中最基本的编译与发布单元。可以把它理解成“一个独立的 Rust 包/模块边界”。带 `main()` 的叫 binary crate，可执行；提供库接口的叫 library crate，可被其他 crate 依赖。Codex 的 `codex-rs/` 就是一个包含 89 个 crate 的 workspace。
+> **知识点 — crate**: `crate` 是 Rust 中最基本的编译与发布单元。可以把它理解成“一个独立的 Rust 包/模块边界”。带 `main()` 的叫 binary crate，可执行；提供库接口的叫 library crate，可被其他 crate 依赖。Codex 的 `codex-rs/` 就是一个包含大量 crate 的 workspace。
 
 > **知识点 — Cargo Workspace**: Rust 的 Cargo workspace 允许在一个仓库中管理多个相关的 crate（库/包）。它们共享同一个 `Cargo.lock` 锁文件和编译产物目录 `target/`，既保证依赖版本一致，又允许独立编译和测试单个 crate。
 
@@ -526,7 +483,7 @@ Codex 组合了多套构建与任务工具：
 
 | 构建工具 | 用途 | 特点 |
 |---------|------|------|
-| **Cargo** | Rust 依赖管理和编译 | 标准 Rust 工具链，89 个 crate 的 workspace |
+| **Cargo** | Rust 依赖管理和编译 | 标准 Rust 工具链，大型 workspace |
 | **Bazel** | 跨语言的确定性构建 | 用于 CI/CD，确保可复现构建 |
 | **pnpm** | TypeScript 包管理 | 管理 codex-cli 和 SDK 的 npm 依赖 |
 | **just** | 任务自动化 | 类似 Makefile 的命令运行器 |
@@ -544,9 +501,7 @@ codegen-units = 1     # 单代码生成单元 — 最大化优化
 | 特征 | 数据 |
 |------|------|
 | 语言 | TypeScript (入口) + Rust (核心) |
-| Rust 文件数 | 1,418 个 .rs 文件 |
-| Crate 数量 | 89 个 |
-| 核心文件 | `codex.rs` — 7,931 行 |
+| 核心文件 | `codex.rs` |
 | 支持平台 | macOS (arm64/x64), Linux (arm64/x64), Windows (arm64/x64) |
 | 运行模式 | 交互式 TUI、非交互 Exec、App Server (IDE)、MCP Server |
 | 安装方式 | npm、Homebrew、GitHub Release |

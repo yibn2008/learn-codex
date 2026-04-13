@@ -34,6 +34,8 @@ async fn handle_tool_call(response_item: ResponseItem) {
 }
 ```
 
+**源码**: [tools/parallel.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/parallel.rs)（并行控制与分发）, [tools/registry.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/registry.rs)（handler 注册与 hooks）, [tools/orchestrator.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/orchestrator.rs)（审批→沙箱→执行）
+
 关键认知：**不是所有工具都走审批和沙箱**。只有涉及文件系统/进程执行的工具（exec_command、apply_patch 等）才经过 `ToolOrchestrator` 的审批→沙箱→执行管线。MCP 工具、ToolSearch 等直接在 handler 内完成。
 
 ```mermaid
@@ -125,6 +127,8 @@ builder.push_spec(tool_spec)            // 工具定义（给 LLM 看）
 builder.register_handler(name, handler) // 处理器（给 Codex 执行）
 builder.build() → (specs, registry)
 ```
+
+**源码**: [tools/registry.rs:432-468](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/registry.rs#L432-L468)
 
 定义和处理器**解耦**：同一个 handler 可以服务多个工具名。例如 `UnifiedExecHandler` 同时处理 `exec_command` 和 `write_stdin`。
 

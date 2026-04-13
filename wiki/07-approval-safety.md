@@ -41,6 +41,8 @@ async fn check_and_execute(command, ctx) {
 }
 ```
 
+**源码**: [exec_policy.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/exec_policy.rs)（ExecPolicy 规则匹配）, [guardian/](https://github.com/openai/codex/blob/main/codex-rs/core/src/guardian/)（AI 审查）, [tools/orchestrator.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/orchestrator.rs)（沙箱执行）
+
 ```mermaid
 graph TD
     CMD[命令] --> L1{第 1 层<br/>ExecPolicy}
@@ -141,6 +143,8 @@ Guardian 返回一个结构化的 JSON 评估：
 ```
 
 ### 3.3 Fail-Closed 设计
+
+> **Fail-Closed**（故障关闭）指系统出现任何异常时默认**拒绝**操作，而不是放行。与之相对的是 Fail-Open（故障开放），即异常时默认放行。安全系统通常选择 Fail-Closed。
 
 | 故障场景 | 结果 |
 |---------|------|

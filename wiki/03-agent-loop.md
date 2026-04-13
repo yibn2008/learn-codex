@@ -30,7 +30,7 @@ graph TD
     HOOKS -->|正常结束| END[Turn 结束]
 ```
 
-**源码**: [codex.rs:5971-6483](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5971-L6483)
+**源码**: [codex.rs:6011+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6011)
 
 ### 伪代码总览
 
@@ -81,12 +81,14 @@ async fn run_turn(sess, turn_context, input) {
 ### 2.1 排空待处理输入
 
 ```rust
-// codex.rs 约 6210-6247
+// codex.rs — 排空待处理输入
 if can_drain_pending_input {
     // 从 mailbox（子 Agent 通信）和 pending_input 中取出排队的消息
     // 追加到 history
 }
 ```
+
+**源码**: [codex.rs:6240-6254](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6240-L6254)
 
 这一步处理两种场景：
 - 子 Agent 通过 mailbox 发来的消息
@@ -95,9 +97,10 @@ if can_drain_pending_input {
 ### 2.2 构建采样输入
 
 ```rust
-// codex.rs 约 6257-6261
 let sampling_request_input = sess.state.lock().history.clone_for_prompt();
 ```
+
+**源码**: [codex.rs:6298-6301](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6298-L6301)
 
 从 `ContextManager` 中克隆当前完整的对话历史，作为本轮 LLM 请求的 `input`。
 
@@ -108,12 +111,13 @@ let sampling_request_input = sess.state.lock().history.clone_for_prompt();
 ### 2.4 检查是否继续
 
 ```rust
-// codex.rs 约 6287-6295
 let model_needs_follow_up = sampling_request_output.needs_follow_up;
 let has_pending_input = sess.has_pending_input().await;
 let needs_follow_up = model_needs_follow_up || has_pending_input;
 let token_limit_reached = total_usage_tokens >= auto_compact_limit;
 ```
+
+**源码**: [codex.rs:6328-6371](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6328-L6371)
 
 | 条件 | 动作 |
 |------|------|
@@ -131,7 +135,6 @@ let token_limit_reached = total_usage_tokens >= auto_compact_limit;
 当 `needs_follow_up = false` 时，Turn **不会立即结束**，而是先执行 stop hooks：
 
 ```rust
-// codex.rs 约 6331-6388
 let hook_result = run_stop_hooks(&sess, &turn_context).await;
 match hook_result {
     StopHookOutcome::Continue => {
@@ -148,7 +151,7 @@ match hook_result {
 
 > Stop hooks 是用户自定义的收尾逻辑（通过 `config.toml` 中的 hooks 配置）。它们可以在模型给出最终回复后检查结果，决定是否要求 Agent 继续工作。这是一个容易被忽略但很重要的控制流分支。
 
-**源码**: [codex.rs:6331-6388](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6331-L6388)
+**源码**: [codex.rs:6373-6415](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6373-L6415)
 
 ## 3. run_sampling_request()：单次 LLM 调用
 
@@ -173,9 +176,10 @@ graph TD
 ### 3.1 构建工具路由
 
 ```rust
-// codex.rs 约 6895-6998
 let router = built_tools(sess, turn_context, &input, ...).await?;
 ```
+
+**源码**: [codex.rs:6935-7004](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6935-L7004)
 
 `built_tools()` 每次采样请求都重新构建 `ToolRouter`，因为：
 - MCP 服务器可能新增/移除工具
@@ -185,9 +189,10 @@ let router = built_tools(sess, turn_context, &input, ...).await?;
 ### 3.2 组装 Prompt
 
 ```rust
-// codex.rs 约 6719-6749
 let prompt = build_prompt(input, router, turn_context, base_instructions);
 ```
+
+**源码**: [codex.rs:6719-6749](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6719-L6749)
 
 ```rust
 // client_common.rs:25-45
@@ -201,12 +206,11 @@ pub struct Prompt {
 }
 ```
 
-**源码**: [client_common.rs:25-45](https://github.com/openai/codex/blob/main/codex-rs/core/src/client_common.rs#L25-L45), [codex.rs:6719-6749](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6719-L6749)
+**源码**: [client_common.rs:25-45](https://github.com/openai/codex/blob/main/codex-rs/core/src/client_common.rs#L25-L45), [codex.rs:6759+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6759)
 
 ### 3.3 发送请求与传输层
 
 ```rust
-// client.rs 约 1434-1482
 pub async fn stream(&mut self, prompt, ...) -> Result<ResponseStream> {
     if self.client.responses_websocket_enabled() {
         match self.stream_responses_websocket(...).await? {
@@ -236,7 +240,7 @@ pub async fn stream(&mut self, prompt, ...) -> Result<ResponseStream> {
 | `UsageLimitReached` | 终止，配额用完 |
 | 其他 | 终止，返回错误 |
 
-**源码**: [codex.rs:6807-6892](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6807-L6892)
+**源码**: [codex.rs:6800-6933](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6800-L6933)
 
 ## 4. 流式响应处理：try_run_sampling_request() 内部
 
@@ -256,7 +260,6 @@ Response 事件流:
 这个函数决定了 `needs_follow_up`：
 
 ```rust
-// stream_events_utils.rs 约 205-259
 fn handle_output_item_done(item: ResponseItem) -> OutputItemResult {
     if item.is_tool_call() {
         // 创建工具执行 Future，由 ToolCallRuntime 调度
@@ -279,7 +282,6 @@ fn handle_output_item_done(item: ResponseItem) -> OutputItemResult {
 工具调用的 Future 会被收集到 `in_flight` 列表中，在响应流结束后通过 `drain_in_flight()` 统一 await：
 
 ```rust
-// codex.rs 约 7688-7694
 // 响应流完成后
 for future in in_flight_futures {
     let result = future.await;
@@ -288,7 +290,7 @@ for future in in_flight_futures {
 }
 ```
 
-**源码**: [stream_events_utils.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/stream_events_utils.rs), [codex.rs:7688-7694](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L7688-L7694)
+**源码**: [stream_events_utils.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/stream_events_utils.rs), [codex.rs:7565-7570](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L7565-L7570)
 
 ## 5. 自动压缩：Token 窗口管理
 
@@ -335,17 +337,19 @@ pub struct RunningTask {
 }
 ```
 
+> **知识点 — `Arc<T>`**: `Arc`（Atomic Reference Counted）是 Rust 的原子引用计数智能指针，允许多个线程安全地共享同一份数据。当所有 `Arc` 引用都被释放时，数据才会被回收。这里 `RunningTask` 的多个字段用 `Arc` 包装，是因为它们需要在异步任务、取消逻辑等多个并发上下文中共享访问。
+
 **源码**: [state/turn.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/state/turn.rs), [tasks/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tasks/mod.rs)
 
 ## 7. 本章小结
 
 | 概念 | 说明 | 源码 |
 |------|------|------|
-| **run_turn()** | 外层主循环，管理采样-工具-压缩-hooks 的迭代 | [codex.rs:5971-6483](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5971-L6483) |
-| **run_sampling_request()** | 单次采样：构建工具 → 组装 Prompt → 发送请求 → 重试 | [codex.rs:6760-6893](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6760-L6893) |
-| **try_run_sampling_request()** | 流式响应处理 + 工具调用判定 + drain_in_flight | [codex.rs:7552+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L7552) |
+| **run_turn()** | 外层主循环，管理采样-工具-压缩-hooks 的迭代 | [codex.rs:6011+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6011) |
+| **run_sampling_request()** | 单次采样：构建工具 → 组装 Prompt → 发送请求 → 重试 | [codex.rs:6800+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6800) |
+| **try_run_sampling_request()** | 流式响应处理 + 工具调用判定 + drain_in_flight | [codex.rs:7592+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L7592) |
 | **handle_output_item_done()** | 判定 needs_follow_up，创建工具执行 Future | [stream_events_utils.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/stream_events_utils.rs) |
-| **Stop Hooks** | Turn 收尾阶段，hooks 可阻止结束并注入新 prompt | [codex.rs:6331-6388](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6331-L6388) |
+| **Stop Hooks** | Turn 收尾阶段，hooks 可阻止结束并注入新 prompt | [codex.rs:6373-6415](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6373-L6415) |
 | **TaskKind** | 6 种任务类型：Regular / Compact / Review / Undo / UserShell / GhostSnapshot | [tasks/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tasks/mod.rs) |
 
 ---
