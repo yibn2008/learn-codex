@@ -1,75 +1,102 @@
-# Codex AI Agent 源码深度解析
+# Codex AI Agent — Source-Level Deep Dive
 
-> 本 Wiki 深入分析 [OpenAI Codex CLI](https://github.com/openai/codex) 的源码，以一个真实的 TODOMVC 任务为线索，完整拆解这个生产级 AI Agent 的工作机制。
+> **Language**: **English** · [中文](README.zh.md)
 
-## 阅读导航
+> This Wiki dissects the source of [OpenAI Codex CLI](https://github.com/openai/codex). Using a real TODOMVC task as the connecting thread, it walks through how this production-grade AI agent actually works.
 
-### 基础篇 — 建立全局认知
+> **Translation status**: all 12 chapters and the full-request appendix are now available in English. The Chinese original remains the source-of-truth document and is updated first when content changes.
 
-| 章节 | 你将了解 |
-|------|---------|
-| [00 - 项目概览](00-project-overview.md) | Codex 是什么？Rust Crate 的分层结构、TypeScript → Rust 迁移与启动链路 |
-| [01 - 架构总览](01-architecture-overview.md) | 四层架构（表示层→会话管理→Agent 核心→能力层）、6 个核心抽象、Op/Event 协议 |
-| [02 - 提示词与工具解析](02-prompt-and-tools.md) | 通过真实抓包数据，逐层拆解发给 LLM 的完整请求：instructions + tools + messages |
+## Reading guide
 
-### 核心篇 — Agent 如何工作
+### Foundations — global picture
 
-| 章节 | 你将了解 |
-|------|---------|
-| [03 - Agent Loop 深度剖析](03-agent-loop.md) | `run_turn()` 主循环的源码级解读：采样→工具执行→压缩→Stop Hooks |
-| [04 - 工具系统设计](04-tool-system.md) | 工具从解析到执行的 5 阶段管线：Router→Runtime→Registry→Orchestrator→Handler |
-| [05 - 上下文与对话管理](05-context-management.md) | ContextManager、差分更新、Token 估算、Pre-turn/Mid-turn 自动压缩 |
-| [06 - 子 Agent 与任务委派](06-sub-agent-system.md) | AgentControl 生命周期、Mailbox 异步通信、角色系统、审批委托 |
-| [07 - 审批与安全系统](07-approval-safety.md) | 三层安全架构：ExecPolicy 规则→Guardian AI 审查→OS 沙箱隔离 |
-| [08 - API 与模型交互](08-api-model-interaction.md) | 模型管理、供应商适配、双级客户端、WebSocket/SSE 传输、请求构建与重试 |
+| Chapter | What you'll learn |
+|---------|-------------------|
+| [00 — Project overview](00-project-overview.md) | What is Codex? Rust crate layout, the TypeScript→Rust transition, and the startup chain |
+| [01 — Architecture overview](01-architecture-overview.md) | The four-layer architecture (presentation → session → agent core → capability), six core abstractions, the Op/Event protocol |
+| [02 — Prompts and tools](02-prompt-and-tools.md) | A real captured request, peeled apart layer by layer: instructions + tools + messages |
 
-### 延展篇 — 扩展与集成
+### Core — how the agent works
 
-| 章节 | 你将了解 |
-|------|---------|
-| [09 - MCP、Skills 与插件](09-mcp-skills-plugins.md) | 三种扩展机制：Skills 领域知识注入、MCP 外部工具协议、Plugin 打包分发 |
-| [10 - 产品集成与 App Server](10-sdk-protocol.md) | Harness 思想、App Server 四组件、Thread/Turn/Item 会话模型、多产品接入与 SDK |
-| [11 - 配置系统](11-config-system.md) | 值层 vs 约束层、Feature Flags、沙箱策略、审批预设 |
+| Chapter | What you'll learn |
+|---------|-------------------|
+| [03 — Agent Loop](03-agent-loop.md) | Source-level walkthrough of `run_turn()`: sampling → tool execution → compaction → stop hooks |
+| [04 — Tool system](04-tool-system.md) | The 5-stage pipeline from parsing to execution: Router → Runtime → Registry → Orchestrator → Handler |
+| [05 — Context management](05-context-management.md) | ContextManager, diff-based updates, token estimation, pre-turn / mid-turn auto-compaction |
+| [06 — Sub-agents and delegation](06-sub-agent-system.md) | AgentControl lifecycle, mailbox-based async messaging, role system, approval delegation |
+| [07 — Approvals and safety](07-approval-safety.md) | The three-layer safety architecture: ExecPolicy rules → Guardian AI review → OS sandbox |
+| [08 — API and model interaction](08-api-model-interaction.md) | Model registry, provider adapters, two-tier client, WebSocket/SSE transport, request building and retry |
 
-## 项目概况
+### Extensions — integration surface
 
-```
-OpenAI Codex CLI — 运行在本地的编码 AI Agent
+| Chapter | What you'll learn |
+|---------|-------------------|
+| [09 — MCP, Skills, and plugins](09-mcp-skills-plugins.md) | Three extension mechanisms: Skills for domain knowledge injection, MCP for external tools, plugins for distribution |
+| [10 — Product integration and the App Server](10-sdk-protocol.md) | The "harness" idea, the four App Server components, the Thread/Turn/Item conversation model, multi-product integration and SDKs |
+| [11 — Configuration system](11-config-system.md) | Value layer vs. constraint layer, feature flags, sandbox policy, approval presets |
 
-技术栈    TypeScript (入口) + Rust (核心引擎) + Python/TS SDK
-核心文件  codex.rs（Agent 主循环）
-支持平台  macOS / Linux / Windows (arm64 + x64)
-运行模式  交互式 TUI、非交互 Exec、App Server (IDE)、MCP Server
-```
-
-## 本 Wiki 覆盖情况
-
-基于源码中 `use` 引用频次排序的前 25 个核心 Crate，本 Wiki 覆盖了其中 **21 个（84%）**。未覆盖的 4 个均为工具库或平台特定实现，不影响对 AI Agent 核心机制的理解。
+## Project at a glance
 
 ```
-✅ 已覆盖 (21)    codex-protocol, app-server-protocol, core, config,
-                   login, features, otel, api, tools, exec-server,
-                   execpolicy, model-provider-info, sandboxing, mcp,
-                   client, execpolicy-legacy, models-manager, state,
-                   exec, analytics, network-proxy
+OpenAI Codex CLI — a coding AI agent that runs locally
 
-❌ 未覆盖 (4)     utils/absolute-path, windows-sandbox, git-utils,
-                   utils/output-truncation
+Tech stack       TypeScript (entry) + Rust (core engine) + Python/TS SDK
+Core file        codex.rs (the agent main loop)
+Platforms        macOS / Linux / Windows (arm64 + x64)
+Run modes        Interactive TUI, non-interactive Exec, App Server (IDE), MCP Server
 ```
 
-## 如何阅读
+## Coverage
 
-- **快速了解**：只读第 00 和 01 章，建立全局认知
-- **理解 Agent 原理**：按顺序读 02→07，从提示词到安全系统逐层深入
-- **查阅特定主题**：通过右侧目录直接跳转到感兴趣的章节
+Out of the top 25 most-used crates (ranked by `use` import frequency in the source), this Wiki covers **21 of them (84%)**. The remaining 4 are utility libraries or platform-specific implementations and don't affect understanding of the AI agent core.
 
-> **Rust 知识点**：本 Wiki 面向所有开发者，不要求 Rust 背景。遇到 `Arc<T>`、`trait`、`async/await` 等概念时，会以内联小贴士讲解。
+```
+Covered (21)     codex-protocol, app-server-protocol, core, config,
+                  login, features, otel, api, tools, exec-server,
+                  execpolicy, model-provider-info, sandboxing, mcp,
+                  client, execpolicy-legacy, models-manager, state,
+                  exec, analytics, network-proxy
 
-## 数据来源
+Not covered (4)  utils/absolute-path, windows-sandbox, git-utils,
+                  utils/output-truncation
+```
 
-本 Wiki 的分析基于两类数据：
+## How to read this
 
-1. **源码静态分析** — 对 [openai/codex](https://github.com/openai/codex) 主分支的逐文件阅读
-2. **运行时抓包** — 通过自定义 `model_provider`（`supports_websockets=false`）+ 代理抓取的完整 API 请求/响应（[查看完整请求数据](02-appendix/02-full-request-annotated.md)）
+- **Quick orientation**: read chapters 00 and 01 only — they establish the global picture
+- **Understand the agent core**: read 02 → 07 in order, working from prompt structure down to the safety system
+- **Look up a specific topic**: jump straight to a chapter via the right-side ToC
 
-每个章节都经过 Codex adversarial review 核对源码事实。
+> **About Rust**: this Wiki is aimed at all developers and assumes no Rust background. When `Arc<T>`, `trait`, `async/await`, etc. come up, they are explained inline.
+
+## Data sources
+
+The analysis draws on two kinds of data:
+
+1. **Static source reading** — file-by-file reading of the [openai/codex](https://github.com/openai/codex) main branch
+2. **Runtime captures** — full API request/response data captured via a custom `model_provider` (`supports_websockets=false`) plus a proxy ([see the fully annotated request](02-appendix/02-full-request-annotated.md))
+
+Each chapter is cross-checked against source via Codex adversarial review.
+
+## Bilingual quick links
+
+The "Reading guide" tables above link to the English versions (`xx.md`). To read the Chinese version of any chapter, append `.zh.md` to the filename, or use the table below.
+
+| Chapter | English | 中文 |
+|---------|---------|------|
+| Wiki home | [README.md](README.md) | [README.zh.md](README.zh.md) |
+| 00 — Project overview | [00-project-overview.md](00-project-overview.md) | [00-project-overview.zh.md](00-project-overview.zh.md) |
+| 01 — Architecture overview | [01-architecture-overview.md](01-architecture-overview.md) | [01-architecture-overview.zh.md](01-architecture-overview.zh.md) |
+| 02 — Prompts and tools | [02-prompt-and-tools.md](02-prompt-and-tools.md) | [02-prompt-and-tools.zh.md](02-prompt-and-tools.zh.md) |
+| 02 appendix — Full request, annotated | [02-appendix/02-full-request-annotated.md](02-appendix/02-full-request-annotated.md) | [02-appendix/02-full-request-annotated.zh.md](02-appendix/02-full-request-annotated.zh.md) |
+| 03 — Agent Loop | [03-agent-loop.md](03-agent-loop.md) | [03-agent-loop.zh.md](03-agent-loop.zh.md) |
+| 04 — Tool system | [04-tool-system.md](04-tool-system.md) | [04-tool-system.zh.md](04-tool-system.zh.md) |
+| 05 — Context management | [05-context-management.md](05-context-management.md) | [05-context-management.zh.md](05-context-management.zh.md) |
+| 06 — Sub-agents and delegation | [06-sub-agent-system.md](06-sub-agent-system.md) | [06-sub-agent-system.zh.md](06-sub-agent-system.zh.md) |
+| 07 — Approvals and safety | [07-approval-safety.md](07-approval-safety.md) | [07-approval-safety.zh.md](07-approval-safety.zh.md) |
+| 08 — API and model interaction | [08-api-model-interaction.md](08-api-model-interaction.md) | [08-api-model-interaction.zh.md](08-api-model-interaction.zh.md) |
+| 09 — MCP, Skills, and plugins | [09-mcp-skills-plugins.md](09-mcp-skills-plugins.md) | [09-mcp-skills-plugins.zh.md](09-mcp-skills-plugins.zh.md) |
+| 10 — Product integration and App Server | [10-sdk-protocol.md](10-sdk-protocol.md) | [10-sdk-protocol.zh.md](10-sdk-protocol.zh.md) |
+| 11 — Configuration system | [11-config-system.md](11-config-system.md) | [11-config-system.zh.md](11-config-system.zh.md) |
+
+In the web preview ([index.html](../index.html)), use the `EN / 中文` toggle in the top-left of the sidebar to switch language globally.

@@ -1,205 +1,207 @@
-# 02 — 提示词与工具解析
+> **Language**: **English** · [中文](02-prompt-and-tools.zh.md)
 
-> 本章通过一个真实的 TODOMVC 任务，完整展示 Codex 与 LLM 之间的多轮交互过程。先建立全局视角，再逐层拆解 System Prompt、Tools 和每轮消息的构成。
+# 02 — Prompts and Tools
 
-## 1. 任务全景：3 轮 LLM 调用完成一个文件创建
+> This chapter walks through a real TODOMVC task to show the full multi-turn exchange between Codex and the LLM. We start with a bird's-eye view, then peel apart the System Prompt, the tools, and the structure of every message.
 
-我们让 Codex 执行一个简单任务：
+## 1. The big picture: 3 LLM calls to create one file
+
+We give Codex a simple task:
 
 ```
 Create a file called /tmp/todomvc3.html with a minimal TODOMVC page using HTML CSS JS
 ```
 
-Codex 总共发起了 **3 轮 LLM 调用**才完成这个任务。下图展示了完整流程：
+In total, Codex makes **3 LLM calls** to finish the job. The diagram below shows the complete flow:
 
 ```mermaid
 sequenceDiagram
-    participant User as 用户
+    participant User as User
     participant Codex as Codex Agent
     participant LLM as gpt-5.4
-    participant Tools as 工具系统
+    participant Tools as Tool system
 
-    User->>Codex: "创建 todomvc3.html"
+    User->>Codex: "create todomvc3.html"
 
     rect rgb(245, 243, 238)
-    Note over Codex,LLM: 第 1 轮 — 理解任务并创建文件
-    Codex->>LLM: instructions + tools + 3 条 messages
-    LLM-->>Codex: 思考 → 回复 → 调用 apply_patch
-    Codex->>Tools: 执行 apply_patch
-    Tools-->>Codex: 文件创建成功
+    Note over Codex,LLM: Turn 1 — understand the task and create the file
+    Codex->>LLM: instructions + tools + 3 messages
+    LLM-->>Codex: think -> reply -> call apply_patch
+    Codex->>Tools: run apply_patch
+    Tools-->>Codex: file created
     end
 
     rect rgb(245, 243, 238)
-    Note over Codex,LLM: 第 2 轮 — 校验文件
-    Codex->>LLM: 同上 + 第 1 轮的历史（共 7 条 messages）
-    LLM-->>Codex: 回复 → 调用 exec_command
-    Codex->>Tools: 执行 ls -l && grep
-    Tools-->>Codex: 文件信息
+    Note over Codex,LLM: Turn 2 — verify the file
+    Codex->>LLM: same as above + Turn 1 history (7 messages)
+    LLM-->>Codex: reply -> call exec_command
+    Codex->>Tools: run ls -l && grep
+    Tools-->>Codex: file info
     end
 
     rect rgb(245, 243, 238)
-    Note over Codex,LLM: 第 3 轮 — 输出最终回复
-    Codex->>LLM: 同上 + 第 2 轮的历史（共 10 条 messages）
-    LLM-->>Codex: 最终回复（无工具调用）
+    Note over Codex,LLM: Turn 3 — emit the final reply
+    Codex->>LLM: same as above + Turn 2 history (10 messages)
+    LLM-->>Codex: final reply (no tool call)
     end
 
-    Codex-->>User: "已创建 /tmp/todomvc3.html"
+    Codex-->>User: "created /tmp/todomvc3.html"
 ```
 
-### 每轮请求的构成
+### What every request contains
 
-每一轮 LLM 调用，Codex 都发送**完全相同的结构**，只是 messages 随对话推进而增长：
+Every LLM call sends **exactly the same structure**; only `messages` grows as the conversation progresses:
 
-| | 第 1 轮 | 第 2 轮 | 第 3 轮 |
+| | Turn 1 | Turn 2 | Turn 3 |
 |---|---------|---------|---------|
-| **instructions** | 14,732 字符 | 14,732 字符 | 14,732 字符 |
-| **tools** | 16 个 | 16 个 | 16 个 |
-| **messages** | 3 条 | 7 条 | 10 条 |
-| **请求体大小** | 125 KB | 138 KB | 139 KB |
+| **instructions** | 14,732 chars | 14,732 chars | 14,732 chars |
+| **tools** | 16 | 16 | 16 |
+| **messages** | 3 | 7 | 10 |
+| **Request body size** | 125 KB | 138 KB | 139 KB |
 
-> 注意：每轮都**重发**完整的 instructions 和全部 tools 定义。这就是为什么长对话需要上下文压缩——messages 不断累积，请求体持续膨胀。
+> Note: every turn **resends** the full instructions and the full tool definitions. This is exactly why long conversations need context compaction — `messages` keeps accumulating and the request body keeps growing.
 
-### 循环何时停止？
+### When does the loop stop?
 
 ```
-模型回复中包含工具调用 → needs_follow_up = true  → 继续下一轮
-模型回复中没有工具调用 → needs_follow_up = false → 任务完成
+Model reply contains a tool call    -> needs_follow_up = true  -> continue to next turn
+Model reply contains no tool call   -> needs_follow_up = false -> task complete
 ```
 
-第 1、2 轮模型都调用了工具，所以继续；第 3 轮模型只返回文本回复，循环结束。
+In Turns 1 and 2 the model invoked tools, so the loop continues. In Turn 3 the model returns plain text only, and the loop ends.
 
-## 2. System Prompt：Agent 的人格底座
+## 2. System Prompt: the agent's personality foundation
 
-`instructions` 字段是 Codex 的系统指令，约 **14,732 字符**，编译时从 markdown 文件嵌入二进制。它定义了 Agent「是谁」和「怎么做事」。
+The `instructions` field is Codex's system prompt — about **14,732 characters** — and is embedded into the binary at compile time from a markdown file. It defines who the agent **is** and how it **operates**.
 
-### 主要模块
+### Main sections
 
-| 模块 | 核心规则 |
-|------|---------|
-| **身份** | "You are Codex, a coding agent based on GPT-5" |
-| **人格** | 价值观 Clarity / Pragmatism / Rigor；不说废话、不拍马屁 |
-| **编辑** | 必须用 `apply_patch` 改文件；不 revert 用户的修改；不用交互式 git |
-| **自主性** | "Persist until the task is fully handled end-to-end"——不要半途而废 |
-| **前端** | 避免 "AI slop"——不要千篇一律的 purple-on-white 布局 |
-| **输出** | 两个通道：`commentary`（过程更新）和 `final`（最终回复）；30 秒一次进展更新 |
-| **格式** | Markdown、不用嵌套列表、代码块要有 info string、最终回复不超 50-70 行 |
+| Section | Core rules |
+|---------|-----------|
+| **Identity** | "You are Codex, a coding agent based on GPT-5" |
+| **Personality** | Values: Clarity / Pragmatism / Rigor; no fluff, no flattery |
+| **Editing** | Must use `apply_patch` to change files; do not revert the user's edits; no interactive git |
+| **Autonomy** | "Persist until the task is fully handled end-to-end" — do not stop halfway |
+| **Frontend** | Avoid "AI slop" — no cookie-cutter purple-on-white layouts |
+| **Output** | Two channels: `commentary` (progress updates) and `final` (final reply); progress update every 30 seconds |
+| **Format** | Markdown; no nested lists; code blocks need an info string; final reply capped at 50–70 lines |
 
-### 几条有意思的规则
+### A few rules worth highlighting
 
-**"不说废话"**：
+**"No fluff"**:
 ```
 You avoid cheerleading, motivational language, or artificial reassurance,
 or any kind of fluff.
 ```
 
-**"不要 AI slop"**：
+**"No AI slop"**:
 ```
 When doing frontend design tasks, avoid collapsing into "AI slop" or
 safe, average-looking layouts.
 ```
 
-**源码**: [protocol/src/prompts/base_instructions/default.md](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/prompts/base_instructions/default.md)
+**Source**: [protocol/src/prompts/base_instructions/default.md](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/prompts/base_instructions/default.md)
 
-## 3. Tools：16 个核心工具
+## 3. Tools: 16 core tools
 
-每次请求携带 16 个核心工具定义（本例中还有 61 个 GitHub MCP 插件工具，此处省略）。
+Each request carries 16 core tool definitions (this run also has 61 GitHub MCP plugin tools, omitted here).
 
-### 按功能分类
+### Grouped by purpose
 
-| 类别 | 工具 | 说明 |
-|------|------|------|
-| **命令执行** | `exec_command` | 在 PTY 中执行 shell 命令，支持沙箱权限提升 |
-| | `write_stdin` | 向运行中的进程写入输入 |
-| **文件编辑** | `apply_patch` | 创建/修改文件，使用类 unified diff 的自由文本格式 |
-| **图片** | `view_image` | 查看本地图片文件 |
-| **搜索** | `web_search` | 网页搜索 |
-| **规划** | `update_plan` | 更新任务计划步骤 |
-| **用户交互** | `request_user_input` | 向用户提问（仅 Plan 模式可用） |
-| **工具发现** | `tool_suggest` | 建议缺失的工具/连接器 |
-| **MCP 资源** | `list_mcp_resources` | 列出 MCP 服务器提供的资源 |
-| | `list_mcp_resource_templates` | 列出 MCP 资源模板 |
-| | `read_mcp_resource` | 读取 MCP 服务器资源 |
-| **子 Agent** | `spawn_agent` | 创建子 Agent（可指定模型和推理强度） |
-| | `send_input` | 向子 Agent 发送消息 |
-| | `resume_agent` | 恢复已关闭的子 Agent |
-| | `wait_agent` | 等待子 Agent 完成 |
-| | `close_agent` | 关闭子 Agent |
+| Category | Tool | Description |
+|----------|------|-------------|
+| **Command execution** | `exec_command` | Run a shell command in a PTY, with sandbox-escalation support |
+| | `write_stdin` | Write input to a running process |
+| **File editing** | `apply_patch` | Create / modify files using a unified-diff-like free-text format |
+| **Images** | `view_image` | View a local image file |
+| **Search** | `web_search` | Search the web |
+| **Planning** | `update_plan` | Update task-plan steps |
+| **User interaction** | `request_user_input` | Ask the user a question (Plan mode only) |
+| **Tool discovery** | `tool_suggest` | Suggest missing tools / connectors |
+| **MCP resources** | `list_mcp_resources` | List resources exposed by an MCP server |
+| | `list_mcp_resource_templates` | List MCP resource templates |
+| | `read_mcp_resource` | Read a resource from an MCP server |
+| **Sub-agents** | `spawn_agent` | Create a sub-agent (can pin model + reasoning effort) |
+| | `send_input` | Send a message to a sub-agent |
+| | `resume_agent` | Resume a closed sub-agent |
+| | `wait_agent` | Wait for a sub-agent to finish |
+| | `close_agent` | Close a sub-agent |
 
-### 两种工具类型
+### Two tool kinds
 
-- **function 类型**（如 `exec_command`）：标准 JSON Schema 定义参数，模型以 JSON 格式调用
-- **custom 类型**（如 `apply_patch`）：自由文本格式，模型直接输出补丁内容，不走 JSON
+- **function tools** (e.g. `exec_command`): parameters defined as standard JSON Schema; the model invokes them in JSON format.
+- **custom tools** (e.g. `apply_patch`): free-text format; the model emits the patch body directly without going through JSON.
 
-**源码**: 工具注册在 [core/src/tools/spec.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/spec.rs)
+**Source**: tools are registered in [core/src/tools/spec.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/spec.rs)
 
-## 4. 三轮对话逐轮拆解
+## 4. Turn-by-turn breakdown
 
-### 4.1 第 1 轮：理解任务 → 创建文件
+### 4.1 Turn 1: understand the task -> create the file
 
-**输入**（3 条 messages）：
+**Input** (3 messages):
 
-| # | 角色 | 内容 |
-|---|------|------|
-| 0 | `developer` | 沙箱权限规则 + 协作模式 + Skills 列表 + Plugins 列表（10,132 字符） |
-| 1 | `user` | AGENTS.md 项目规则注入 + 环境上下文 cwd/shell/date（3,650 字符） |
-| 2 | `user` | "Create a file called /tmp/todomvc3.html..."（用户输入，85 字符） |
+| # | Role | Content |
+|---|------|---------|
+| 0 | `developer` | Sandbox permission rules + collaboration mode + Skills list + Plugins list (10,132 chars) |
+| 1 | `user` | AGENTS.md project rules injection + environment context cwd/shell/date (3,650 chars) |
+| 2 | `user` | "Create a file called /tmp/todomvc3.html..." (user input, 85 chars) |
 
-**输出**：
-1. **reasoning** — 模型内部思考（加密，不可见）
-2. **assistant message** — "正在创建 `/tmp/todomvc3.html`..."（84 字符，commentary 通道）
-3. **apply_patch 调用** — 输出完整的 HTML/CSS/JS 补丁（约 7,900 字符）
+**Output**:
+1. **reasoning** — the model's internal thinking (encrypted, not visible)
+2. **assistant message** — "Creating `/tmp/todomvc3.html`..." (84 chars, commentary channel)
+3. **apply_patch call** — emits the full HTML/CSS/JS patch (~7,900 chars)
 
-**工具执行结果**: `Success. Updated files: A /tmp/todomvc3.html`
+**Tool result**: `Success. Updated files: A /tmp/todomvc3.html`
 
-> `needs_follow_up = true`（有工具调用）→ 进入第 2 轮
+> `needs_follow_up = true` (a tool was called) -> proceed to Turn 2
 
-### 4.2 第 2 轮：校验文件
+### 4.2 Turn 2: verify the file
 
-**输入**（7 条 messages）= 第 1 轮的 3 条 + 第 1 轮的输出 4 条（reasoning + assistant + tool_call + tool_output）
+**Input** (7 messages) = Turn 1's 3 messages + Turn 1's 4 output items (reasoning + assistant + tool_call + tool_output)
 
-**新增的 4 条**：
+**The 4 newly added items**:
 
-| # | 类型 | 内容 |
-|---|------|------|
-| 3 | `reasoning` | 模型思考过程（加密） |
-| 4 | `assistant` | "正在创建..." |
-| 5 | `apply_patch` 调用 | 创建文件的补丁内容 |
+| # | Type | Content |
+|---|------|---------|
+| 3 | `reasoning` | Model thinking (encrypted) |
+| 4 | `assistant` | "Creating..." |
+| 5 | `apply_patch` call | Patch body that creates the file |
 | 6 | `tool_output` | "Success" |
 
-**输出**：
-1. **assistant message** — "文件已写入，做一次快速校验..."（36 字符）
-2. **exec_command 调用** — `ls -l /tmp/todomvc3.html && grep -n "TodoMVC" /tmp/todomvc3.html`
+**Output**:
+1. **assistant message** — "File written; running a quick verification..." (36 chars)
+2. **exec_command call** — `ls -l /tmp/todomvc3.html && grep -n "TodoMVC" /tmp/todomvc3.html`
 
-**工具执行结果**: 文件存在，129 行，标题包含 "TodoMVC"
+**Tool result**: file exists, 129 lines, title contains "TodoMVC"
 
-> `needs_follow_up = true` → 进入第 3 轮
+> `needs_follow_up = true` -> proceed to Turn 3
 
-### 4.3 第 3 轮：最终回复
+### 4.3 Turn 3: final reply
 
-**输入**（10 条 messages）= 前 7 条 + 第 2 轮新增 3 条（assistant + exec_command + output）
+**Input** (10 messages) = the previous 7 + Turn 2's 3 new items (assistant + exec_command + output)
 
-**输出**：
-1. **assistant message** — 最终回复，总结创建结果（无工具调用）
+**Output**:
+1. **assistant message** — final reply summarising the result (no tool call)
 
-> `needs_follow_up = false` → **任务完成**
+> `needs_follow_up = false` -> **task complete**
 
-### 消息累积全景
+### Message accumulation, at a glance
 
 ```
-第 1 轮:  [developer] [user:ctx] [user:input]                                               → 3 条
-第 2 轮:  ────────同上──────── [reasoning] [assistant] [apply_patch] [tool_output]            → 7 条
-第 3 轮:  ──────────────同上────────────── [assistant] [exec_command] [cmd_output]            → 10 条
+Turn 1:  [developer] [user:ctx] [user:input]                                               -> 3
+Turn 2:  ────── same as above ────── [reasoning] [assistant] [apply_patch] [tool_output]   -> 7
+Turn 3:  ─────────── same as above ─────────── [assistant] [exec_command] [cmd_output]    -> 10
 ```
 
-## 5. 完整请求数据
+## 5. Full request data
 
-以上分析基于真实的 API 抓包数据。完整内容：
+The analysis above is based on real API capture data. Full content:
 
-- [完整请求逐段注解](02-appendix/02-full-request-annotated.md) — 第 3 轮请求的 instructions + tools + 10 条 messages + LLM 回复，逐字段展示
-- [完整请求原始 JSON](02-appendix/02-full-request.json) — 同一请求的原始 JSON（75KB）
+- [Annotated full request, section by section](02-appendix/02-full-request-annotated.md) — Turn 3's instructions + tools + 10 messages + LLM reply, field by field
+- [Raw JSON of the full request](02-appendix/02-full-request.json) — the same request as raw JSON (75 KB)
 
-> **抓包方法**: 通过自定义 `model_provider`（设置 `supports_websockets=false`）+ Node.js 代理抓取。详见 [PROGRESS.md](../PROGRESS.md) Round 6 的命令参考。
+> **Capture method**: a custom `model_provider` (with `supports_websockets=false`) plus a Node.js proxy. See the command reference for Round 6 in [PROGRESS.md](../PROGRESS.md).
 
 ---
 
-**上一章**: [01 — 架构总览](01-architecture-overview.md) | **下一章**: [03 — Agent Loop 深度剖析](03-agent-loop.md)
+**Previous**: [01 — Architecture overview](01-architecture-overview.md) | **Next**: [03 — Agent Loop deep dive](03-agent-loop.md)

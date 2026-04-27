@@ -1,137 +1,139 @@
-# 07 — 审批与安全系统
+> **Language**: **English** · [中文](07-approval-safety.zh.md)
 
-> Codex 在本地执行代码——安全性至关重要。本章剖析其三层安全架构：ExecPolicy（规则）→ Guardian（AI 审查）→ Sandbox（OS 隔离），以及网络访问控制和审批模式。
+# 07 — Approval & Safety System
 
-## 1. 三层架构与伪代码
+> Codex executes code locally — safety is critical. This chapter dissects the three-layer safety architecture: ExecPolicy (rules) → Guardian (AI review) → Sandbox (OS isolation), along with network access control and approval modes.
 
-每个需要执行的命令经过三层安全检查：
+## 1. Three-layer architecture and pseudocode
+
+Every command that needs to be executed passes through three layers of safety checks:
 
 ```
 async fn check_and_execute(command, ctx) {
-    // ── 第 1 层：ExecPolicy（规则匹配）──
+    // ── Layer 1: ExecPolicy (rule matching) ──
     let requirement = exec_policy.evaluate(command);
     match requirement {
         Skip { bypass_sandbox } => {
-            // 匹配到 Allow 规则或已知安全命令
+            // matched an Allow rule, or a known-safe command
             if bypass_sandbox { execute_without_sandbox(); }
             else { goto layer_3; }
         }
         Forbidden { reason } => return reject(reason),
         NeedsApproval { reason } => {
-            // ── 第 2 层：Guardian 或用户审批 ──
+            // ── Layer 2: Guardian or user approval ──
             if routes_to_guardian(ctx) {
-                // AI 审查（90 秒超时，超时 = 拒绝）
+                // AI review (90s timeout, timeout = deny)
                 let assessment = guardian.review(command, transcript);
                 if assessment.outcome == Deny { return reject(); }
             } else {
-                // 直接询问用户
+                // ask the user directly
                 let decision = ask_user(reason);
                 if decision == Denied { return reject(); }
             }
         }
     }
 
-    // ── 第 3 层：Sandbox（OS 隔离）──
+    // ── Layer 3: Sandbox (OS isolation) ──
     let sandbox = sandbox_manager.select(platform, policy);
     let result = execute_in_sandbox(command, sandbox);
     if result == SandboxDenied {
-        // 请求提升权限，用户批准后无沙箱重试
+        // ask for escalation; on user approval retry without the sandbox
         ask_escalation() → execute_without_sandbox();
     }
 }
 ```
 
-**源码**: [exec_policy.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/exec_policy.rs)（ExecPolicy 规则匹配）, [guardian/](https://github.com/openai/codex/blob/main/codex-rs/core/src/guardian/)（AI 审查）, [tools/orchestrator.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/orchestrator.rs)（沙箱执行）
+**Source**: [exec_policy.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/exec_policy.rs) (ExecPolicy rule matching), [guardian/](https://github.com/openai/codex/blob/main/codex-rs/core/src/guardian/) (AI review), [tools/orchestrator.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/orchestrator.rs) (sandbox execution)
 
 ```mermaid
 graph TD
-    CMD[命令] --> L1{第 1 层<br/>ExecPolicy}
+    CMD[Command] --> L1{Layer 1<br/>ExecPolicy}
     L1 -->|Allow| L3
-    L1 -->|Forbidden| REJECT[拒绝]
-    L1 -->|NeedsApproval| L2{第 2 层}
+    L1 -->|Forbidden| REJECT[Reject]
+    L1 -->|NeedsApproval| L2{Layer 2}
 
-    L2 -->|Guardian 启用| GUARD[Guardian<br/>AI 审查]
-    L2 -->|Guardian 未启用| USER[用户审批]
+    L2 -->|Guardian enabled| GUARD[Guardian<br/>AI review]
+    L2 -->|Guardian disabled| USER[User approval]
     GUARD -->|Allow| L3
-    GUARD -->|Deny / 超时| REJECT
+    GUARD -->|Deny / timeout| REJECT
     USER -->|Approved| L3
     USER -->|Denied| REJECT
 
-    L3[第 3 层<br/>Sandbox 执行]
-    L3 -->|成功| OK[返回结果]
-    L3 -->|沙箱拒绝| ESC[请求提升]
-    ESC -->|批准| NOSB[无沙箱重试]
-    ESC -->|拒绝| REJECT
+    L3[Layer 3<br/>Sandbox execution]
+    L3 -->|Success| OK[Return result]
+    L3 -->|Sandbox denied| ESC[Request escalation]
+    ESC -->|Approved| NOSB[Retry without sandbox]
+    ESC -->|Denied| REJECT
     NOSB --> OK
 ```
 
-## 2. 第 1 层：ExecPolicy — 规则匹配
+## 2. Layer 1: ExecPolicy — rule matching
 
-ExecPolicy 使用基于 Starlark 的 `.rules` 文件定义命令级别的访问策略。
+ExecPolicy uses Starlark-based `.rules` files to define command-level access policies.
 
-### 2.1 Decision 三态
+### 2.1 The Decision tri-state
 
 ```rust
 enum Decision {
-    Allow,      // 允许执行
-    Prompt,     // 需要审批
-    Forbidden,  // 禁止执行
+    Allow,      // allow execution
+    Prompt,     // approval required
+    Forbidden,  // execution forbidden
 }
 ```
 
-### 2.2 评估流程
+### 2.2 Evaluation flow
 
 ```
 evaluate(command)
-  1. 将命令按 shell 控制符（|, &&, ||, ;）拆分为独立段
-  2. 每段独立匹配 .rules 文件
-  3. 匹配到规则 → 返回规则的 Decision
-  4. 未匹配到规则 → 启发式判断：
+  1. Split the command at shell control operators (|, &&, ||, ;) into independent segments
+  2. Match each segment against the .rules file independently
+  3. Rule matched → return the rule's Decision
+  4. No rule matched → fall back to heuristics:
      ├── is_known_safe_command()? → Allow
-     ├── command_might_be_dangerous()? → Prompt 或 Forbidden
-     └── 根据 approval_policy 决定
+     ├── command_might_be_dangerous()? → Prompt or Forbidden
+     └── otherwise decide based on approval_policy
 ```
 
-### 2.3 审批模式
+### 2.3 Approval modes
 
-| 模式 | 行为 |
-|------|------|
-| `Never` | 全部自动批准，从不询问 |
-| `OnFailure` | 先在沙箱中执行，失败后才询问。但对危险命令（如 `rm -rf`）会先 Prompt 再执行 |
-| `OnRequest` | 由模型决定何时请求审批 |
-| `UnlessTrusted` | 只自动批准已知安全的只读命令 |
-| `Granular(config)` | 按类别细粒度控制（sandbox/rules/skill/mcp） |
+| Mode | Behavior |
+|------|----------|
+| `Never` | Auto-approve everything; never ask |
+| `OnFailure` | Run inside the sandbox first; only ask after failure. Dangerous commands (e.g. `rm -rf`) still Prompt up front |
+| `OnRequest` | The model decides when to request approval |
+| `UnlessTrusted` | Auto-approve only known-safe read-only commands |
+| `Granular(config)` | Fine-grained control by category (sandbox/rules/skill/mcp) |
 
-> **默认值取决于信任级别**：trusted 项目（用户已确认信任的目录）默认 `OnRequest`；untrusted 项目默认 `UnlessTrusted`——更严格，大多数命令都需要审批。
+> **The default depends on trust level**: trusted projects (directories the user has explicitly trusted) default to `OnRequest`; untrusted projects default to `UnlessTrusted` — stricter, requiring approval for most commands.
 
-### 2.4 命令修正建议
+### 2.4 Command-amendment suggestions
 
-当命令被 Prompt 时，ExecPolicy 会生成一个 `proposed_execpolicy_amendment`——建议的 prefix_rule。但这**只是一个候选项**，不会自动持久化：
+When a command is Prompted, ExecPolicy generates a `proposed_execpolicy_amendment` — a suggested prefix_rule. But this is **only a candidate** and is not auto-persisted:
 
-- **普通批准** / **Session 批准**：只对当前操作或当前 Session 有效，**不写入** `.rules` 文件
-- **显式选择持久化**（`AcceptWithExecpolicyAmendment`）：用户主动选择这个分支时，才会调用 `persist_execpolicy_amendment` 将规则写入磁盘
+- **Plain approval** / **Session approval**: only valid for the current operation or current session; **not written** to the `.rules` file
+- **Explicit persistence** (`AcceptWithExecpolicyAmendment`): only when the user actively picks this branch is `persist_execpolicy_amendment` called to write the rule to disk
 
-> 某些前缀被**禁止建议**（`BANNED_PREFIX_SUGGESTIONS`），如 `python3`、`bash`、`node`、`sudo`——因为批准这些前缀等于批准任意脚本执行。
+> Some prefixes are **forbidden as suggestions** (`BANNED_PREFIX_SUGGESTIONS`) — `python3`, `bash`, `node`, `sudo` — because approving these prefixes would amount to approving the execution of arbitrary scripts.
 
-**源码**: [exec_policy.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/exec_policy.rs)
+**Source**: [exec_policy.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/exec_policy.rs)
 
-## 3. 第 2 层：Guardian — AI 审查
+## 3. Layer 2: Guardian — AI review
 
-Guardian 是一个**独立的 AI 子 Agent**，专门审查主 Agent 的工具调用是否安全。
+Guardian is a **dedicated AI sub-agent** whose sole job is to review whether the main agent's tool calls are safe.
 
-### 3.1 核心参数
+### 3.1 Core parameters
 
-| 参数 | 值 |
-|------|-----|
-| 模型 | gpt-5.4 |
-| 超时 | 90 秒 |
-| 最大消息摘要 | 10,000 tokens |
-| 最大工具摘要 | 10,000 tokens |
-| 最近条目上限 | 40 条 |
+| Parameter | Value |
+|-----------|-------|
+| Model | gpt-5.4 |
+| Timeout | 90 seconds |
+| Max message summary | 10,000 tokens |
+| Max tool summary | 10,000 tokens |
+| Recent-entry cap | 40 entries |
 
-### 3.2 审查输出
+### 3.2 Review output
 
-Guardian 返回一个结构化的 JSON 评估：
+Guardian returns a structured JSON assessment:
 
 ```json
 {
@@ -142,38 +144,38 @@ Guardian 返回一个结构化的 JSON 评估：
 }
 ```
 
-### 3.3 Fail-Closed 设计
+### 3.3 Fail-closed design
 
-> **Fail-Closed**（故障关闭）指系统出现任何异常时默认**拒绝**操作，而不是放行。与之相对的是 Fail-Open（故障开放），即异常时默认放行。安全系统通常选择 Fail-Closed。
+> **Fail-closed** means the system defaults to **denying** the operation whenever anything goes wrong, rather than letting it through. The opposite is fail-open, where anomalies default to allow. Safety systems usually pick fail-closed.
 
-| 故障场景 | 结果 |
-|---------|------|
-| 超时（> 90 秒） | **拒绝** |
-| JSON 解析失败 | **拒绝** |
-| 被取消（用户中断） | 中止（不执行） |
-| Guardian 自身出错 | **拒绝** |
+| Failure scenario | Result |
+|------------------|--------|
+| Timeout (> 90s) | **Deny** |
+| JSON parse failure | **Deny** |
+| Cancelled (user interrupt) | Abort (do not execute) |
+| Guardian itself errors | **Deny** |
 
-> 所有失败模式都导致拒绝，从不自动批准——这就是 "fail-closed" 设计。
+> Every failure mode results in denial — never auto-approval. That is the essence of a fail-closed design.
 
-### 3.4 Guardian 的安全隔离
+### 3.4 Guardian's own isolation
 
-Guardian 自身运行在严格锁定的 Session 中：
+Guardian itself runs inside a tightly locked-down session:
 
-| 配置 | 值 | 原因 |
-|------|-----|------|
-| `approval_policy` | `Never` | 防止 Guardian 递归触发审批 |
-| `sandbox_policy` | `ReadOnly` | Guardian 不能写入文件 |
-| Collab/Spawn | 禁用 | 不能创建子 Agent |
-| WebSearch | 禁用 | 不能联网搜索 |
-| ExecPolicy | **不继承** | 防止主 Agent 的规则影响 Guardian 判断 |
+| Setting | Value | Reason |
+|---------|-------|--------|
+| `approval_policy` | `Never` | Prevents Guardian from recursively triggering approvals |
+| `sandbox_policy` | `ReadOnly` | Guardian cannot write files |
+| Collab/Spawn | Disabled | Cannot spawn sub-agents |
+| WebSearch | Disabled | Cannot perform web searches |
+| ExecPolicy | **Not inherited** | Prevents the main agent's rules from biasing Guardian's judgement |
 
-### 3.5 Session 复用：Trunk + Ephemeral
+### 3.5 Session reuse: trunk + ephemeral
 
-Guardian 维护一个长期的 "trunk" Session（复用 prompt cache），并在 trunk 繁忙时创建 "ephemeral" 分叉 Session，支持**并行审查**而不互相阻塞。
+Guardian maintains a long-lived "trunk" session (which reuses the prompt cache) and forks an "ephemeral" session when the trunk is busy, supporting **parallel reviews** without blocking each other.
 
-### 3.6 触发条件
+### 3.6 Trigger conditions
 
-Guardian 只在两个条件同时满足时启用：
+Guardian is only enabled when both of these conditions hold:
 
 ```rust
 fn routes_approval_to_guardian(turn: &TurnContext) -> bool {
@@ -182,79 +184,79 @@ fn routes_approval_to_guardian(turn: &TurnContext) -> bool {
 }
 ```
 
-不满足时，审批请求直接路由到用户。
+When they don't hold, the approval request is routed straight to the user.
 
-**源码**: [guardian/](https://github.com/openai/codex/blob/main/codex-rs/core/src/guardian/)
+**Source**: [guardian/](https://github.com/openai/codex/blob/main/codex-rs/core/src/guardian/)
 
-## 4. 第 3 层：Sandbox — OS 级隔离
+## 4. Layer 3: Sandbox — OS-level isolation
 
-通过审批后，命令在操作系统沙箱中执行：
+Once approved, the command runs inside an OS sandbox:
 
-### 4.1 沙箱类型
+### 4.1 Sandbox types
 
-| SandboxType | 平台 | 实现 |
-|-------------|------|------|
-| `MacosSeatbelt` | macOS | `sandbox-exec` + `.sbpl` 策略文件 |
+| SandboxType | Platform | Implementation |
+|-------------|----------|----------------|
+| `MacosSeatbelt` | macOS | `sandbox-exec` + `.sbpl` policy file |
 | `LinuxSeccomp` | Linux | Bubblewrap + Seccomp/Landlock |
-| `WindowsRestrictedToken` | Windows | 降权进程 Token |
-| `None` | 任意 | 无沙箱（用户显式批准后） |
+| `WindowsRestrictedToken` | Windows | Down-scoped process token |
+| `None` | any | No sandbox (after explicit user approval) |
 
-### 4.2 选择逻辑
+### 4.2 Selection logic
 
 ```
 SandboxManager.select(preference, policy)
-  → Forbid   → None（用户请求无沙箱）
-  → Require  → 当前平台对应的沙箱
-  → Auto     → 检查 file_system_policy / network_policy：
-               如果有限制 → 使用平台沙箱
-               如果全开放 → None
+  → Forbid   → None (user requested no sandbox)
+  → Require  → the platform's native sandbox
+  → Auto     → inspect file_system_policy / network_policy:
+               if any restriction is set → use the platform sandbox
+               if everything is open     → None
 ```
 
-### 4.3 沙箱策略
+### 4.3 Sandbox policies
 
-| SandboxPolicy | 文件系统 | 网络 |
-|---------------|---------|------|
-| `read-only` | 只读 | 禁止 |
-| `workspace-write` | cwd + writable_roots 可写 | 禁止 |
-| `full-access` | 全部可写 | 允许 |
+| SandboxPolicy | File system | Network |
+|---------------|-------------|---------|
+| `read-only` | read-only | denied |
+| `workspace-write` | cwd + writable_roots writable | denied |
+| `full-access` | fully writable | allowed |
 
-**源码**: [sandboxing/src/manager.rs](https://github.com/openai/codex/blob/main/codex-rs/sandboxing/src/manager.rs), [seatbelt.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/seatbelt.rs), [landlock.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/landlock.rs)
+**Source**: [sandboxing/src/manager.rs](https://github.com/openai/codex/blob/main/codex-rs/sandboxing/src/manager.rs), [seatbelt.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/seatbelt.rs), [landlock.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/landlock.rs)
 
-## 5. 网络访问控制
+## 5. Network access control
 
-网络审批**不是独立于沙箱的附加层**，而是受 sandbox policy 和 approval policy 共同约束：
+Network approval is **not a standalone layer on top of the sandbox** — it is jointly constrained by the sandbox policy and the approval policy:
 
 ```
-网络请求到达:
-  → 前置条件检查：
-    ├── 当前 Turn 存在？
-    ├── sandbox 是 ReadOnly 或 WorkspaceWrite？
-    └── approval_policy 允许网络审批？
-    → 任一不满足 → 直接 deny（不弹审批）
+A network request arrives:
+  → Preconditions:
+    ├── Is there an active turn?
+    ├── Is the sandbox ReadOnly or WorkspaceWrite?
+    └── Does approval_policy permit network approval?
+    → If any fails → deny outright (no approval prompt)
 
-  → 缓存查找（key = host + protocol + port）：
-    ├── session_denied → 直接拒绝
-    └── session_approved → 直接放行
+  → Cache lookup (key = host + protocol + port):
+    ├── session_denied → reject immediately
+    └── session_approved → allow immediately
 
-  → 首次访问：弹出审批请求
+  → First-time access: surface an approval request
     → AllowOnce / AllowForSession / Deny
 ```
 
-> ⚠ 在 `full-access` 沙箱、无活动 Turn、或 `approval_policy = Never` 等条件下，**不会进入网络审批流程**——网络请求直接被沙箱层决定。
+> ⚠ Under `full-access` sandbox, with no active turn, or with `approval_policy = Never`, the network-approval flow is **not entered** — the request is decided directly by the sandbox layer.
 
-Guardian 会从父 Session 继承已批准的主机列表，但只用于只读策略检查。
+Guardian inherits the parent session's approved-host list, but uses it only for read-only policy checks.
 
-**源码**: [tools/network_approval.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/network_approval.rs)
+**Source**: [tools/network_approval.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/network_approval.rs)
 
-## 6. 本章小结
+## 6. Chapter summary
 
-| 层 | 组件 | 职责 | 源码 |
-|----|------|------|------|
-| **1** | ExecPolicy | 基于规则的命令评估（Allow/Prompt/Forbidden） | [exec_policy.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/exec_policy.rs) |
-| **2** | Guardian | AI 审查（gpt-5.4, 90s 超时, fail-closed） | [guardian/](https://github.com/openai/codex/blob/main/codex-rs/core/src/guardian/) |
-| **3** | Sandbox | OS 级隔离（Seatbelt/Landlock/Windows） | [sandboxing/](https://github.com/openai/codex/blob/main/codex-rs/sandboxing/src/) |
-| **-** | NetworkApproval | 按主机的网络访问控制 | [network_approval.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/network_approval.rs) |
+| Layer | Component | Responsibility | Source |
+|-------|-----------|----------------|--------|
+| **1** | ExecPolicy | Rule-based command evaluation (Allow/Prompt/Forbidden) | [exec_policy.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/exec_policy.rs) |
+| **2** | Guardian | AI review (gpt-5.4, 90s timeout, fail-closed) | [guardian/](https://github.com/openai/codex/blob/main/codex-rs/core/src/guardian/) |
+| **3** | Sandbox | OS-level isolation (Seatbelt/Landlock/Windows) | [sandboxing/](https://github.com/openai/codex/blob/main/codex-rs/sandboxing/src/) |
+| **-** | NetworkApproval | Per-host network access control | [network_approval.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tools/network_approval.rs) |
 
 ---
 
-**上一章**: [06 — 子 Agent 与任务委派](06-sub-agent-system.md) | **下一章**: [08 — API 与模型交互](08-api-model-interaction.md)
+**Previous**: [06 — Sub-agent system & task delegation](06-sub-agent-system.md) | **Next**: [08 — API and model interaction](08-api-model-interaction.md)

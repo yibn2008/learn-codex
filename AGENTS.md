@@ -21,9 +21,21 @@
 - Playwright 截图必须保存到 `.screenshots/` 目录，不要放在项目根目录
 - 临时测试产物不要提交到 git
 
+## Wiki 双语命名约定
+
+本项目所有面向读者的 Markdown 都需要双语版本：
+
+- **`xx.md` = 英文版（默认）**，例如 `wiki/00-project-overview.md`、`README.md`
+- **`xx.zh.md` = 中文版**，例如 `wiki/00-project-overview.zh.md`、`README.zh.md`
+- `index.html` 默认加载英文，并在 sidebar 提供 `EN / 中文` 全局切换；如果当前语言版本缺失，自动 fallback 到另一种语言并显示提示横幅。
+- 每个 `xx.zh.md` 文件顶部必须有：`> **语言 / Language**: [English](xx.md) · **中文**`；英文版顶部对应：`> **Language**: **English** · [中文](xx.zh.md)`。
+- 内部 Markdown 链接：**中文文件之间互相链接 `.zh.md`，英文文件之间互相链接 `.md`**。不要跨语言混链。
+- 项目内部协作文档（`PROJECT.md` / `PROGRESS.md` / `AGENTS.md`）保持中文单一版本，不需要英文翻译。
+- `wiki/02-appendix/02-full-request.json` 等纯数据文件不需要语言后缀。
+
 ## Wiki 编写规范
 
-- 所有 Wiki 内容使用中文编写
+- 所有 Wiki 内容**先用中文编写**（`xx.zh.md`），英文版由翻译产出（`xx.md`）。新章节落地后，先把 `xx.zh.md` 写好并 review 通过，再着手翻译。
 - **每章按「总—分」结构编写**：先用流程图 + 伪代码给出该章核心逻辑的整体概览，再按子模块逐一展开细节。读者应能只看第一节就建立完整的心智模型。
 - **复杂源码配伪代码**：当原始 Rust 代码过长或过于复杂时，优先提供简化的伪代码帮助理解，再辅以关键源码片段和 GitHub 链接。**伪代码必须附带真实源码链接**，让读者能立即跳转到对应的真实实现。
 - 遇到 Rust 特有概念时，以「知识点小贴士」内联讲解，不设独立的 Rust 入门章节

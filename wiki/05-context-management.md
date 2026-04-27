@@ -1,31 +1,33 @@
-# 05 — 上下文与对话管理
+> **Language**: **English** · [中文](05-context-management.zh.md)
 
-> Agent 的记忆力取决于上下文管理。本章剖析 Codex 如何管理对话历史、追踪 Token 使用、在窗口溢出时自动压缩，以及如何在多轮对话中保持状态一致性。
+# 05 — Context and Conversation Management
 
-## 1. 整体架构与伪代码
+> An agent's memory depends on its context management. This chapter dissects how Codex manages conversation history, tracks token usage, automatically compacts when the window overflows, and keeps state consistent across multiple turns.
 
-上下文管理的核心是 `ContextManager`，它维护一个有序的消息列表。以下伪代码展示了 `run_turn()` 中上下文相关操作的**真实顺序**：
+## 1. Overall architecture and pseudocode
+
+The core of context management is the `ContextManager`, which maintains an ordered list of messages. The pseudocode below shows the **actual order** of context-related operations inside `run_turn()`:
 
 ```
 async fn run_turn(sess, turn_context, user_input) {
-    // ── 第 1 步：Pre-turn 压缩（在任何新内容写入之前）──
-    // ⚠ 注意：此时尚未记录差分更新和用户输入
-    // 源码 TODO：当前不考虑待注入内容可能导致的超限
+    // ── Step 1: pre-turn compaction (before any new content is written) ──
+    // ⚠ Note: differential updates and user input have not been recorded yet
+    // Source TODO: the limit check does not yet account for content about to be injected
     if total_tokens >= auto_compact_limit {
-        run_auto_compact(DoNotInject);  // 清除 reference，下轮完整注入
+        run_auto_compact(DoNotInject);  // clear reference; next turn re-injects in full
     }
 
-    // ── 第 2 步：记录上下文更新 ──
-    record_context_updates();    // 差分注入变化的设置
-    record_user_input();         // 记录用户消息
+    // ── Step 2: record context updates ──
+    record_context_updates();    // differential injection of changed settings
+    record_user_input();         // record the user message
 
-    // ── 第 3 步：主循环 ──
+    // ── Step 3: main loop ──
     loop {
-        let input = history.for_prompt();  // 规范化 + 过滤
+        let input = history.for_prompt();  // normalize + filter
         let result = run_sampling_request(input);
 
         if result.needs_follow_up && token_limit_reached {
-            run_auto_compact(BeforeLastUserMessage);  // mid-turn 压缩
+            run_auto_compact(BeforeLastUserMessage);  // mid-turn compaction
             continue;
         }
         if result.needs_follow_up { continue; }
@@ -35,229 +37,229 @@ async fn run_turn(sess, turn_context, user_input) {
 }
 ```
 
-**源码**: [codex.rs:5971-6483](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5971-L6483)（run_turn 中上下文相关流程）, [context_manager/history.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs)
+**Source**: [codex.rs:5971-6483](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5971-L6483) (context-related flow inside `run_turn`), [context_manager/history.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs)
 
-> ⚠ **已知局限**: Pre-turn 压缩在差分更新和用户输入记录**之前**执行。这意味着如果 pre-turn 压缩后剩余空间刚好够用，但差分更新 + 用户输入又把 Token 推过阈值，当前不会再次触发压缩——这需要等到 mid-turn 阶段才处理。源码中有明确 TODO 标注此问题（[codex.rs:5985-5988](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5985-L5988)）。
+> ⚠ **Known limitation**: pre-turn compaction runs **before** the differential update and user input are recorded. That means if the headroom left after pre-turn compaction is just barely enough, but the differential update plus user input then push the token count back over the threshold, no second compaction is triggered — the issue has to wait until the mid-turn stage to be addressed. The source code marks this with an explicit TODO ([codex.rs:5985-5988](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L5985-L5988)).
 
 ```mermaid
 graph TD
-    subgraph 写入
-        REC[record_items<br/>记录新消息] --> TRUNC[截断过长内容]
-        TRUNC --> ITEMS[items 列表]
+    subgraph Write
+        REC[record_items<br/>record new messages] --> TRUNC[truncate oversized content]
+        TRUNC --> ITEMS[items list]
     end
 
-    subgraph 读取
-        ITEMS --> NORM[normalize<br/>修复 call/output 对<br/>去除图片]
-        NORM --> PROMPT[for_prompt<br/>过滤 GhostSnapshot]
-        PROMPT --> LLM[发给 LLM]
+    subgraph Read
+        ITEMS --> NORM[normalize<br/>repair call/output pairs<br/>strip images]
+        NORM --> PROMPT[for_prompt<br/>filter GhostSnapshot]
+        PROMPT --> LLM[send to LLM]
     end
 
-    subgraph 压缩
+    subgraph Compact
         ITEMS --> EST[estimate_token_count]
-        EST --> CHECK{超限?}
-        CHECK -->|是| COMPACT[压缩]
+        EST --> CHECK{over limit?}
+        CHECK -->|yes| COMPACT[compact]
         COMPACT --> ITEMS
     end
 ```
 
-**源码**: [context_manager/history.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs)
+**Source**: [context_manager/history.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs)
 
-## 2. ContextManager：对话历史的读写
+## 2. ContextManager: reading and writing conversation history
 
 ```rust
 pub struct ContextManager {
-    items: Vec<ResponseItem>,              // 对话历史（oldest → newest）
-    history_version: u64,                  // 版本号（压缩/回滚时递增）
-    token_info: Option<TokenUsageInfo>,    // Token 使用统计
-    reference_context_item: Option<...>,   // 上下文基线（用于差分更新）
+    items: Vec<ResponseItem>,              // conversation history (oldest → newest)
+    history_version: u64,                  // version number (incremented on compact / rollback)
+    token_info: Option<TokenUsageInfo>,    // token-usage statistics
+    reference_context_item: Option<...>,   // context baseline (for differential updates)
 }
 ```
 
-### 2.1 写入：record_items()
+### 2.1 Writing: record_items()
 
-每次模型回复或工具执行后，结果通过 `record_items()` 追加到历史：
+After every model reply or tool execution, the result is appended to history through `record_items()`:
 
 ```
 record_items(items, truncation_policy)
-  → 过滤：只保留 API 消息和 GhostSnapshot
-  → 截断：按 truncation_policy 限制单条消息大小（默认 10,000 tokens）
-  → 追加到 items 列表
+  → filter: keep only API messages and GhostSnapshot
+  → truncate: cap each message size per truncation_policy (default 10,000 tokens)
+  → append to the items list
 ```
 
-**源码**: [history.rs:99-114](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L99-L114)
+**Source**: [history.rs:99-114](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L99-L114)
 
-### 2.2 读取：for_prompt()
+### 2.2 Reading: for_prompt()
 
-发送给 LLM 前，历史需要**规范化**：
+Before being sent to the LLM, history needs to be **normalized**:
 
 ```
 for_prompt(input_modalities)
   → normalize_history():
-    1. ensure_call_outputs_present()  — 补齐缺失的工具输出（插入 "aborted"）
-    2. remove_orphan_outputs()        — 删除没有对应 call 的 output
-    3. strip_images_when_unsupported() — 图片替换为文字占位符
-  → 过滤掉 GhostSnapshot（模型不应看到）
-  → 返回规范化后的消息列表
+    1. ensure_call_outputs_present()  — fill in missing tool outputs (insert "aborted")
+    2. remove_orphan_outputs()        — remove outputs that have no matching call
+    3. strip_images_when_unsupported() — replace images with text placeholders
+  → filter out GhostSnapshot (the model must not see them)
+  → return the normalized message list
 ```
 
-> **知识点 — GhostSnapshot**: GhostSnapshot 是一种不可见的历史标记，用于支持 `/undo` 操作。它记录了某个时间点的上下文快照，让回滚成为可能。模型永远看不到它们，但压缩时会被保留。
+> **Tip — GhostSnapshot**: a GhostSnapshot is an invisible history marker used to support the `/undo` operation. It records a context snapshot at a given point in time, making rollback possible. The model never sees them, but they are preserved during compaction.
 
-**源码**: [history.rs:120-125](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L120-L125), [normalize.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/normalize.rs)
+**Source**: [history.rs:120-125](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L120-L125), [normalize.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/normalize.rs)
 
-### 2.3 版本追踪：history_version
+### 2.3 Version tracking: history_version
 
-每次历史被重写（压缩、回滚、替换），`history_version` 递增。下游组件（如 WebSocket 连接的 prompt cache）通过对比版本号来判断是否需要刷新。
+Whenever history is rewritten (compact, rollback, replace), `history_version` increments. Downstream components (such as the prompt cache on a WebSocket connection) compare version numbers to decide whether they need to refresh.
 
-## 3. 差分更新：部分有效的优化
+## 3. Differential updates: a partially effective optimization
 
-Codex 通过 `reference_context_item` 记录上一轮的设置基线，尝试只注入**变化的部分**而非完整重发：
+Codex records the previous turn's settings baseline in `reference_context_item` and tries to inject **only what changed** instead of resending everything:
 
 ```
 build_settings_update_items(previous_baseline, current_context)
-  → 逐项对比：
+  → compare item by item:
     ├── environment (cwd, env vars)
     ├── permissions (sandbox, approval)
     ├── collaboration_mode
     ├── realtime_active
     ├── personality
-    └── model_instructions（换模型时）
-  → 返回只包含变化项的 developer messages
+    └── model_instructions (when the model is switched)
+  → return developer messages that contain only the changed items
 ```
 
-在大多数 Turn 中（设置没变），这个机制可以避免重复注入数千字符的 permissions 指令。
+In most turns (where settings have not changed), this mechanism avoids re-injecting thousands of characters of permissions instructions.
 
-> ⚠ **已知局限**: 源码中明确标注 `build_settings_update_items` **尚未覆盖** `build_initial_context` 输出的所有 model-visible 内容（[updates.rs:204-207](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/updates.rs#L204-L207)）。这意味着在 fork/resume 场景下，单靠差分更新不能完全还原 prompt 状态——某些初始上下文内容仍然依赖完整重新注入。
+> ⚠ **Known limitation**: the source explicitly notes that `build_settings_update_items` does **not yet** cover everything that `build_initial_context` outputs as model-visible content ([updates.rs:204-207](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/updates.rs#L204-L207)). That means in fork/resume scenarios the differential update alone cannot fully reconstruct the prompt state — some initial-context content still relies on a full re-injection.
 
-**源码**: [context_manager/updates.rs:196-231](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/updates.rs#L196-L231)
+**Source**: [context_manager/updates.rs:196-231](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/updates.rs#L196-L231)
 
-## 4. Token 追踪与估算
+## 4. Token tracking and estimation
 
-### 4.1 两种来源
+### 4.1 Two sources
 
-| 来源 | 精度 | 时机 |
-|------|------|------|
-| **API 返回的 usage** | 精确 | 每轮采样结束后 |
-| **字节估算** | 近似（4 字节 ≈ 1 token） | 任何时候 |
+| Source | Precision | When |
+|--------|-----------|------|
+| **API-returned usage** | exact | after each sampling round ends |
+| **Byte-based estimation** | approximate (4 bytes ≈ 1 token) | any time |
 
-### 4.2 字节估算的特殊处理
+### 4.2 Special handling in byte-based estimation
 
-| 内容类型 | 估算方式 |
-|---------|---------|
-| 普通文本 | JSON 序列化后字节数 ÷ 4 |
-| 图片（original detail） | 解码图片，按 32px 切片计算 token（结果缓存在 LRU cache） |
-| 图片（默认 detail） | 固定 1,844 tokens |
-| Reasoning（加密） | base64 长度 × 3/4 - 650 字节 |
-| GhostSnapshot | 0（不可见） |
+| Content type | Estimation method |
+|--------------|-------------------|
+| Plain text | bytes of the JSON-serialized form ÷ 4 |
+| Image (original detail) | decode the image and compute tokens by 32-px tiles (results cached in an LRU cache) |
+| Image (default detail) | fixed at 1,844 tokens |
+| Reasoning (encrypted) | base64 length × 3/4 − 650 bytes |
+| GhostSnapshot | 0 (invisible) |
 
-### 4.3 Token 总量计算
+### 4.3 Computing the total token count
 
 ```
 get_total_token_usage()
-  = 最后一次 API 返回的 total_tokens
-  + 自上次 API 响应后新增消息的估算 tokens
+  = total_tokens from the most recent API response
+  + estimated tokens of messages added since that API response
 ```
 
-**源码**: [history.rs:312-358](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L312-L358)
+**Source**: [history.rs:312-358](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L312-L358)
 
-## 5. 自动压缩：按阶段区分行为
+## 5. Auto compaction: behavior depends on the stage
 
-压缩的核心逻辑在 `compact.rs`，但**不同触发阶段的行为差异很大**：
+The core compaction logic lives in `compact.rs`, but **the different trigger stages behave very differently**:
 
-### 5.1 Pre-turn / 手动压缩
+### 5.1 Pre-turn / manual compaction
 
-| 属性 | 值 |
-|------|-----|
-| **触发条件** | Turn 开始前 `total_tokens >= auto_compact_limit`，或用户 `Op::Compact` |
+| Property | Value |
+|----------|-------|
+| **Trigger condition** | `total_tokens >= auto_compact_limit` before a turn starts, or the user issues `Op::Compact` |
 | **InitialContextInjection** | `DoNotInject` |
-| **压缩后历史** | `[用户消息] + [摘要]`（**不含初始上下文**） |
-| **reference_context_item** | 设为 `None` |
-| **恢复方式** | 下一轮 Turn 会检测到 `reference = None`，**完整重新注入**所有初始上下文 |
+| **History after compaction** | `[user message] + [summary]` (**no initial context**) |
+| **reference_context_item** | set to `None` |
+| **Recovery** | the next turn detects `reference = None` and **re-injects all initial context in full** |
 
 ```
 build_compacted_history(Vec::new(), &user_messages, &summary)
-// ↑ 第一个参数 Vec::new() = 空的初始上下文
-// reference_context_item = None → 下轮完整注入
+// ↑ first arg Vec::new() = empty initial context
+// reference_context_item = None → full re-injection next turn
 ```
 
-### 5.2 Mid-turn 压缩
+### 5.2 Mid-turn compaction
 
-| 属性 | 值 |
-|------|-----|
-| **触发条件** | 循环中 `token_limit_reached && needs_follow_up` |
+| Property | Value |
+|----------|-------|
+| **Trigger condition** | inside the loop, `token_limit_reached && needs_follow_up` |
 | **InitialContextInjection** | `BeforeLastUserMessage` |
-| **压缩后历史** | `[初始上下文] + [用户消息] + [摘要]`（**包含初始上下文**） |
-| **reference_context_item** | 设为当前 TurnContext 快照 |
-| **恢复方式** | 无需恢复，上下文已在历史中，循环直接继续 |
+| **History after compaction** | `[initial context] + [user message] + [summary]` (**includes initial context**) |
+| **reference_context_item** | set to a snapshot of the current TurnContext |
+| **Recovery** | none needed — the context is already in history; the loop simply continues |
 
 ```
-// Mid-turn 路径额外执行：
+// Mid-turn path additionally executes:
 let initial_context = sess.build_initial_context(turn_context);
 new_history = insert_initial_context_before_last_real_user_or_summary(
     new_history, initial_context
 );
-// reference_context_item = Some(current) → 后续可做差分
+// reference_context_item = Some(current) → enables future differential updates
 ```
 
-### 5.3 为什么要区分？
+### 5.3 Why the distinction?
 
-Mid-turn 压缩发生在循环中间，之后还要继续采样——模型必须能看到完整的上下文才能正确工作。而 pre-turn 压缩发生在 Turn 之间，下一轮 Turn 启动时会自动完整注入上下文，所以压缩时不需要保留。
+Mid-turn compaction happens in the middle of a loop and more sampling has to follow — the model must still see the full context to do the right thing. Pre-turn compaction happens between turns, and the next turn's startup will automatically re-inject the context in full, so there is no need to retain it during compaction.
 
-### 5.4 本地 vs 远程压缩
+### 5.4 Local vs. remote compaction
 
-| 方面 | 本地压缩 | 远程压缩 |
-|------|---------|---------|
-| **实现** | 调用同一模型做流式摘要 | 调用 OpenAI 专用 API |
-| **选择条件** | 默认 / 非 OpenAI 供应商 | OpenAI 供应商且支持时 |
-| **developer 消息** | 按阶段决定（见上表） | **丢弃**（服务端处理后格式不可靠） |
-| **摘要控制** | 本地 `SUMMARIZATION_PROMPT` 模板 | 服务端决定 |
+| Aspect | Local compaction | Remote compaction |
+|--------|------------------|-------------------|
+| **Implementation** | call the same model for streaming summarization | call a dedicated OpenAI API |
+| **Selection** | default / non-OpenAI providers | OpenAI providers when supported |
+| **developer messages** | depends on the stage (see the table above) | **discarded** (post-server format is unreliable) |
+| **Summary control** | local `SUMMARIZATION_PROMPT` template | decided server-side |
 
-**源码**: [compact.rs:258-276](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs#L258-L276), [compact_remote.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact_remote.rs)
+**Source**: [compact.rs:258-276](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs#L258-L276), [compact_remote.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact_remote.rs)
 
-## 6. 回滚：drop_last_n_user_turns()
+## 6. Rollback: drop_last_n_user_turns()
 
-用户执行 `/undo` 时，通过 `drop_last_n_user_turns(n)` 回滚：
+When the user runs `/undo`, rollback goes through `drop_last_n_user_turns(n)`:
 
 ```
 drop_last_n_user_turns(n)
-  → 从 items 末尾向前找 n 个用户/Agent 消息边界
-  → 截断到该边界
-  → 清理截断点上方的 developer/contextual 消息
-  → 如果截断了 build_initial_context 消息 → 清除 reference_context_item
+  → walk backward from the end of items to find n user/agent message boundaries
+  → truncate at that boundary
+  → clean up developer/contextual messages above the cut
+  → if a build_initial_context message was truncated → clear reference_context_item
   → history_version += 1
 ```
 
-如果 `reference_context_item` 被清除，下一轮 Turn 会完整重新注入上下文。
+If `reference_context_item` is cleared, the next turn re-injects the context in full.
 
-**源码**: [history.rs:240-263](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L240-L263)
+**Source**: [history.rs:240-263](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L240-L263)
 
-## 7. 持久化：Rollout 系统
+## 7. Persistence: the Rollout system
 
-每个 Session 的事件持久化到 JSONL 文件：
+Each session's events are persisted to a JSONL file:
 
 ```
 ~/.codex/sessions/2026/04/12/rollout-<timestamp>-<uuid>.jsonl
 ```
 
-每行一个 JSON 对象，格式为 `{ timestamp, type, payload }`：
-- `type: "session_meta"` — 会话元信息
-- `type: "response_item"` — 对话消息/工具调用
-- `type: "event_msg"` — Turn 生命周期事件
-- `type: "turn_context"` — Turn 配置快照
+Each line is a JSON object of the form `{ timestamp, type, payload }`:
+- `type: "session_meta"` — session metadata
+- `type: "response_item"` — conversation message / tool call
+- `type: "event_msg"` — turn-lifecycle event
+- `type: "turn_context"` — turn-configuration snapshot
 
-**源码**: [rollout/](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/)
+**Source**: [rollout/](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/)
 
-## 8. 本章小结
+## 8. Chapter summary
 
-| 组件 | 职责 | 源码 |
-|------|------|------|
-| **ContextManager** | 对话历史的读写、规范化、版本追踪 | [context_manager/history.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs) |
-| **normalize** | 修复 call/output 对、去除图片、删除孤立输出 | [context_manager/normalize.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/normalize.rs) |
-| **updates** | 差分上下文更新（**部分覆盖**，有已知局限） | [context_manager/updates.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/updates.rs) |
-| **compact** | Pre-turn：不含初始上下文；Mid-turn：含初始上下文 | [compact.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs) |
-| **compact_remote** | 远程压缩（丢弃 developer 消息，强制完整重注入） | [compact_remote.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact_remote.rs) |
-| **Token 估算** | 字节级估算 + 图片特殊处理 + LRU 缓存 | [history.rs:500-673](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L500-L673) |
-| **Rollout** | JSONL 持久化，支持会话恢复 | [rollout/](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/) |
+| Component | Responsibility | Source |
+|-----------|----------------|--------|
+| **ContextManager** | Reading and writing conversation history, normalization, version tracking | [context_manager/history.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs) |
+| **normalize** | Repair call/output pairs, strip images, remove orphan outputs | [context_manager/normalize.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/normalize.rs) |
+| **updates** | Differential context updates (**partial coverage**, with known limitations) | [context_manager/updates.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/updates.rs) |
+| **compact** | Pre-turn: no initial context; mid-turn: includes initial context | [compact.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs) |
+| **compact_remote** | Remote compaction (drops developer messages, forces full re-injection) | [compact_remote.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact_remote.rs) |
+| **Token estimation** | Byte-level estimation + special-cased images + LRU cache | [history.rs:500-673](https://github.com/openai/codex/blob/main/codex-rs/core/src/context_manager/history.rs#L500-L673) |
+| **Rollout** | JSONL persistence, supports session resume | [rollout/](https://github.com/openai/codex/blob/main/codex-rs/rollout/src/) |
 
 ---
 
-**上一章**: [04 — 工具系统设计](04-tool-system.md) | **下一章**: [06 — 子 Agent 与任务委派](06-sub-agent-system.md)
+**Previous**: [04 — Tool system design](04-tool-system.md) | **Next**: [06 — Sub-agents and task delegation](06-sub-agent-system.md)

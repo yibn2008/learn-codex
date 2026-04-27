@@ -1,52 +1,54 @@
-# 11 — 配置系统
+> **Language**: **English** · [中文](11-config-system.zh.md)
 
-> 本章剖析 Codex 的配置分层合并机制、Feature Flags 系统和权限配置。
+# 11 — Configuration system
 
-## 1. 整体架构与伪代码
+> This chapter dissects Codex's layered configuration merging, the Feature Flags system, and the permission configuration.
 
-Codex 的配置分为**值层**和**约束层**两个独立体系：
+## 1. Overall architecture and pseudocode
+
+Codex's configuration is split into two independent systems: a **value layer** and a **constraint layer**:
 
 ```
-// 值层：按优先级合并（高 → 低）
+// Value layer: merged in priority order (high → low)
 config_values = merge(
-    runtime_overrides,       // 1. CLI 参数 (-c key=value)
-    project_configs,         // 2. 项目级 .codex/config.toml（从 cwd 向上多层）
-    user_config,             // 3. 用户级 ~/.codex/config.toml
-    system_defaults          // 4. 内置默认值
+    runtime_overrides,       // 1. CLI flags (-c key=value)
+    project_configs,         // 2. project-level .codex/config.toml (walks upward from cwd)
+    user_config,             // 3. user-level ~/.codex/config.toml
+    system_defaults          // 4. built-in defaults
 );
 
-// 约束层：独立于值层，强制执行
+// Constraint layer: independent of the value layer, enforced unconditionally
 constraints = cloud_requirements + admin_requirements;
-// 约束不可被值层覆盖（如强制 sandbox 或 approval 最低标准）
+// Constraints cannot be overridden by the value layer (e.g. enforced sandbox or minimum approval bar)
 
 final_config = apply_constraints(config_values, constraints);
 ```
 
-**源码**: [config/src/config_toml.rs](https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs)（配置解析）, [core/src/config_loader/](https://github.com/openai/codex/blob/main/codex-rs/core/src/config_loader/)（分层合并）
+**Source**: [config/src/config_toml.rs](https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs) (config parsing), [core/src/config_loader/](https://github.com/openai/codex/blob/main/codex-rs/core/src/config_loader/) (layered merge)
 
 ```mermaid
 graph TD
-    subgraph 值层
-        CLI[CLI 参数] --> MERGE[ConfigLayerStack]
-        PROJ[项目配置<br/>.codex/config.toml] --> MERGE
-        USER[用户配置<br/>~/.codex/config.toml] --> MERGE
-        DEF[内置默认值] --> MERGE
+    subgraph Value_layer
+        CLI[CLI flags] --> MERGE[ConfigLayerStack]
+        PROJ[Project config<br/>.codex/config.toml] --> MERGE
+        USER[User config<br/>~/.codex/config.toml] --> MERGE
+        DEF[Built-in defaults] --> MERGE
     end
 
-    subgraph 约束层
-        CLOUD[云端/管理员要求] --> CONSTRAIN[强制约束]
+    subgraph Constraint_layer
+        CLOUD[Cloud / admin requirements] --> CONSTRAIN[Enforced constraints]
     end
 
-    MERGE --> CONFIG[合并后的值]
+    MERGE --> CONFIG[Merged values]
     CONFIG --> CONSTRAIN
-    CONSTRAIN --> FINAL[最终 Config]
+    CONSTRAIN --> FINAL[Final Config]
 ```
 
-> 约束层和值层的关键区别：值层的配置可以被更高优先级的层覆盖，但约束层的限制**不可被用户覆盖**——它们是安全下限。
+> The key difference between the constraint layer and the value layer: values can be overridden by a higher-priority layer, but constraint-layer limits **cannot be overridden by the user** — they are a safety floor.
 
-## 2. 配置文件格式
+## 2. Configuration file format
 
-### 2.1 用户级配置（`~/.codex/config.toml`）
+### 2.1 User-level config (`~/.codex/config.toml`)
 
 ```toml
 model = "gpt-5.4"
@@ -64,16 +66,16 @@ wire_api = "responses"
 supports_websockets = false
 ```
 
-### 2.2 项目级配置（`.codex/config.toml`）
+### 2.2 Project-level config (`.codex/config.toml`)
 
-从 cwd 向上查找，**多层合并**（最近的优先）：
+Located by walking upward from the cwd, with **multi-level merge** (closest wins):
 
 ```
-/project/.codex/config.toml      ← 项目根级
-/project/packages/app/.codex/config.toml  ← 子目录级（更高优先级）
+/project/.codex/config.toml      ← project root level
+/project/packages/app/.codex/config.toml  ← subdirectory level (higher priority)
 ```
 
-### 2.3 命令行覆盖
+### 2.3 Command-line overrides
 
 ```bash
 codex -c 'model="o3"'
@@ -81,48 +83,48 @@ codex -c 'model_providers.proxy.base_url="http://..."'
 codex --enable some_feature --disable another_feature
 ```
 
-**源码**: [config/src/config_toml.rs](https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs), [core/src/config_loader/](https://github.com/openai/codex/blob/main/codex-rs/core/src/config_loader/)
+**Source**: [config/src/config_toml.rs](https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs), [core/src/config_loader/](https://github.com/openai/codex/blob/main/codex-rs/core/src/config_loader/)
 
 ## 3. Feature Flags
 
-通过 `codex-features` crate 管理功能开关。当前主要的 Feature（使用源码中的实际名称）：
+Feature toggles are managed through the `codex-features` crate. The currently relevant features (using the actual names from the source) are:
 
-| Feature | 说明 |
-|---------|------|
-| `WebSearchRequest` / `WebSearchCached` | 网页搜索 |
-| `Collab` | 多 Agent 协作模式 |
-| `SpawnCsv` | CSV 批量 Agent 生成 |
+| Feature | Description |
+|---------|-------------|
+| `WebSearchRequest` / `WebSearchCached` | Web search |
+| `Collab` | Multi-agent collaboration mode |
+| `SpawnCsv` | CSV-driven batch agent spawning |
 | `JsRepl` | JavaScript REPL |
-| `ImageGen` | 图片生成 |
+| `ImageGen` | Image generation |
 
-Feature 解析流程（不是简单的全局单例）：
+Feature resolution flow (it is not a simple global singleton):
 
 ```
 Features::from_sources(config_features, cli_features)
   → ManagedFeatures::from_configured(features, constraints)
-    → 应用约束层的强制启用/禁用
-  → 最终的 ManagedFeatures 挂载到 Config 上
+    → apply forced enable/disable from the constraint layer
+  → the final ManagedFeatures is attached to the Config
 ```
 
-**源码**: [features/src/lib.rs](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs)
+**Source**: [features/src/lib.rs](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs)
 
-约束层（如云端推送的 `managed_features`）可以**强制覆盖**用户的 feature 设置。
+The constraint layer (for example, `managed_features` pushed from the cloud) can **forcibly override** the user's feature settings.
 
-**源码**: [features/src/lib.rs](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), [core/src/config/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/config/mod.rs)
+**Source**: [features/src/lib.rs](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), [core/src/config/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/config/mod.rs)
 
-## 4. 权限配置
+## 4. Permission configuration
 
 ### 4.1 SandboxPolicy
 
-配置顶层字段 `sandbox_mode`（不是 `[sandbox]` 表）：
+The sandbox is configured through the top-level field `sandbox_mode` (not a `[sandbox]` table):
 
-| sandbox_mode | 文件系统 | 网络 |
-|-------------|---------|------|
-| `read-only` | 只读 | 禁止 |
-| `workspace-write` | cwd + writable_roots 可写 | 禁止 |
-| `full-access` | 全部可写 | 允许 |
+| sandbox_mode | Filesystem | Network |
+|--------------|------------|---------|
+| `read-only` | Read-only | Blocked |
+| `workspace-write` | cwd + writable_roots are writable | Blocked |
+| `full-access` | Everything writable | Allowed |
 
-workspace-write 的详细配置通过 `[sandbox_workspace_write]` 表：
+Detailed `workspace-write` settings live in the `[sandbox_workspace_write]` table:
 
 ```toml
 sandbox_mode = "workspace-write"
@@ -133,26 +135,26 @@ writable_roots = ["/tmp", "/var/data"]
 
 ### 4.2 Approval Presets
 
-内置的审批策略预设：
+Built-in approval-policy presets:
 
-| Preset | 审批策略 | 沙箱 |
-|--------|---------|------|
-| `read-only` | 严格审批 | 只读 |
-| `auto` | on-request（模型自主请求） | workspace-write |
-| `full-access` | never（从不审批） | full-access |
+| Preset | Approval policy | Sandbox |
+|--------|-----------------|---------|
+| `read-only` | Strict approval | Read-only |
+| `auto` | on-request (model asks when needed) | workspace-write |
+| `full-access` | never (no approval) | full-access |
 
-**源码**: [utils/approval-presets/src/lib.rs](https://github.com/openai/codex/blob/main/codex-rs/utils/approval-presets/src/lib.rs)
+**Source**: [utils/approval-presets/src/lib.rs](https://github.com/openai/codex/blob/main/codex-rs/utils/approval-presets/src/lib.rs)
 
-## 5. 本章小结
+## 5. Chapter summary
 
-| 组件 | 职责 | 源码 |
-|------|------|------|
-| **ConfigToml** | TOML 配置文件解析 | [config/src/config_toml.rs](https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs) |
-| **ConfigLayerStack** | 多层值配置的有序合并 | [core/src/config_loader/](https://github.com/openai/codex/blob/main/codex-rs/core/src/config_loader/) |
-| **Config** | 最终合并后的结构体 | [core/src/config/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/config/mod.rs) |
-| **ManagedFeatures** | Feature Flags（值层 + 约束层解析） | [features/src/lib.rs](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs) |
-| **Approval Presets** | 预定义的审批+沙箱组合 | [utils/approval-presets/](https://github.com/openai/codex/blob/main/codex-rs/utils/approval-presets/src/) |
+| Component | Responsibility | Source |
+|-----------|----------------|--------|
+| **ConfigToml** | TOML config file parsing | [config/src/config_toml.rs](https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs) |
+| **ConfigLayerStack** | Ordered merge of multi-level value configs | [core/src/config_loader/](https://github.com/openai/codex/blob/main/codex-rs/core/src/config_loader/) |
+| **Config** | Final merged struct | [core/src/config/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/config/mod.rs) |
+| **ManagedFeatures** | Feature Flags (value-layer + constraint-layer resolution) | [features/src/lib.rs](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs) |
+| **Approval Presets** | Predefined approval + sandbox bundles | [utils/approval-presets/](https://github.com/openai/codex/blob/main/codex-rs/utils/approval-presets/src/) |
 
 ---
 
-**上一章**: [10 — 产品集成与 App Server](10-sdk-protocol.md)
+**Previous**: [10 — Product integration and the App Server](10-sdk-protocol.md)

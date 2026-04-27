@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Codex 源码解析</title>
+  <title>Codex Source Deep Dive</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Serif+SC:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -73,6 +73,42 @@
       font-weight: 400;
       letter-spacing: 0.04em;
     }
+    .lang-toggle {
+      margin-top: 14px;
+      display: inline-flex;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      overflow: hidden;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      user-select: none;
+    }
+    .lang-toggle button {
+      background: transparent;
+      border: none;
+      padding: 4px 10px;
+      cursor: pointer;
+      color: var(--text-dim);
+      font-family: var(--font-body);
+      font-size: inherit;
+      transition: background 0.15s, color 0.15s;
+    }
+    .lang-toggle button + button { border-left: 1px solid var(--border); }
+    .lang-toggle button:hover { color: var(--text-strong); }
+    .lang-toggle button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .lang-fallback-notice {
+      margin-bottom: 24px;
+      padding: 10px 14px;
+      background: var(--accent-dim);
+      border-left: 2px solid var(--accent);
+      border-radius: 0 4px 4px 0;
+      font-size: 0.78rem;
+      color: var(--text-dim);
+    }
+    .lang-fallback-notice strong { color: var(--accent); font-weight: 600; }
     .nav-group { margin-bottom: 4px; }
     .nav-label {
       font-size: 0.65rem;
@@ -402,8 +438,12 @@
 
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-title">
-      <h1>Codex<br/>源码解析</h1>
+      <h1 id="sidebarTitle"></h1>
       <small>OpenAI Codex CLI</small>
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button type="button" data-lang="en" onclick="setLang('en')">EN</button>
+        <button type="button" data-lang="zh" onclick="setLang('zh')">中文</button>
+      </div>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -425,40 +465,95 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <script>
+    // Each page has language variants. `base` is the unsuffixed path; the EN file is `<base>.md`,
+    // the ZH file is `<base>.zh.md`. Files without a translation (e.g. raw JSON) use `file` instead.
     const pages = [
-      { id: 'project', file: 'PROJECT.md', title: '项目目标', section: '', hidden: true },
-      { id: 'progress', file: 'PROGRESS.md', title: '任务进度', section: '', hidden: true },
-      { id: 'readme', file: 'wiki/README.md', title: '首页', section: '' },
-      { id: '00', file: 'wiki/00-project-overview.md', section: '基础' },
-      { id: '01', file: 'wiki/01-architecture-overview.md', section: '基础' },
-      { id: '02', file: 'wiki/02-prompt-and-tools.md', section: '基础' },
-      { id: '02-full', file: 'wiki/02-appendix/02-full-request-annotated.md', title: '完整请求逐段注解', section: '基础', sub: true },
-      { id: '02-json', file: 'wiki/02-appendix/02-full-request.json', title: '完整请求 JSON', section: '基础', sub: true },
-      { id: '03', file: 'wiki/03-agent-loop.md', section: '核心' },
-      { id: '04', file: 'wiki/04-tool-system.md', section: '核心' },
-      { id: '05', file: 'wiki/05-context-management.md', section: '核心' },
-      { id: '06', file: 'wiki/06-sub-agent-system.md', section: '核心' },
-      { id: '07', file: 'wiki/07-approval-safety.md', section: '核心' },
-      { id: '08', file: 'wiki/08-api-model-interaction.md', section: '核心' },
-      { id: '09', file: 'wiki/09-mcp-skills-plugins.md', section: '延展' },
-      { id: '10', file: 'wiki/10-sdk-protocol.md', section: '延展' },
-      { id: '11', file: 'wiki/11-config-system.md', section: '延展' },
+      { id: 'project',  file: 'PROJECT.md',  titles: { en: 'Project goals (中文)', zh: '项目目标' }, hidden: true },
+      { id: 'progress', file: 'PROGRESS.md', titles: { en: 'Progress (中文)', zh: '任务进度' }, hidden: true },
+      { id: 'readme', base: 'wiki/README', titles: { en: 'Home', zh: '首页' }, section: 'home' },
+      { id: '00', base: 'wiki/00-project-overview',     section: 'foundations' },
+      { id: '01', base: 'wiki/01-architecture-overview', section: 'foundations' },
+      { id: '02', base: 'wiki/02-prompt-and-tools',      section: 'foundations' },
+      { id: '02-full', base: 'wiki/02-appendix/02-full-request-annotated', titles: { en: 'Full request, annotated', zh: '完整请求逐段注解' }, section: 'foundations', sub: true },
+      { id: '02-json', file: 'wiki/02-appendix/02-full-request.json', titles: { en: 'Full request JSON', zh: '完整请求 JSON' }, section: 'foundations', sub: true },
+      { id: '03', base: 'wiki/03-agent-loop',          section: 'core' },
+      { id: '04', base: 'wiki/04-tool-system',          section: 'core' },
+      { id: '05', base: 'wiki/05-context-management',   section: 'core' },
+      { id: '06', base: 'wiki/06-sub-agent-system',     section: 'core' },
+      { id: '07', base: 'wiki/07-approval-safety',      section: 'core' },
+      { id: '08', base: 'wiki/08-api-model-interaction', section: 'core' },
+      { id: '09', base: 'wiki/09-mcp-skills-plugins',   section: 'extensions' },
+      { id: '10', base: 'wiki/10-sdk-protocol',         section: 'extensions' },
+      { id: '11', base: 'wiki/11-config-system',        section: 'extensions' },
     ];
 
-    // Pre-fetch titles from Markdown H1 headings (# xx — 标题)
+    // i18n strings for the chrome (sidebar / fallback notice)
+    const i18n = {
+      en: {
+        siteTitle: 'Codex<br/>Source Deep Dive',
+        sectionLabels: { home: '', foundations: 'Foundations', core: 'Core', extensions: 'Extensions' },
+        loading: 'Loading…',
+        notWritten: 'Not written yet',
+        loadFailed: 'Failed to load',
+        fallbackNotice: 'English version not available yet — showing the <strong>Chinese</strong> original. Use the toggle at the top-left to stay on Chinese, or check back later.',
+      },
+      zh: {
+        siteTitle: 'Codex<br/>源码解析',
+        sectionLabels: { home: '', foundations: '基础', core: '核心', extensions: '延展' },
+        loading: '加载中…',
+        notWritten: '尚未编写',
+        loadFailed: '加载失败',
+        fallbackNotice: '此页暂无中文版 — 显示<strong>英文</strong>原文。',
+      },
+    };
+
+    let currentLang = (function () {
+      try { return localStorage.getItem('lang') || 'en'; } catch { return 'en'; }
+    })();
+
+    function pageFile(p, lang) {
+      if (p.file) return p.file;             // language-neutral (e.g. JSON)
+      if (!p.base) return null;
+      return lang === 'zh' ? `${p.base}.zh.md` : `${p.base}.md`;
+    }
+
+    // Best-effort 404 detection across local file:// and HTTP servers
+    async function tryFetch(path) {
+      try {
+        const res = await fetch(path);
+        if (!res.ok) return null;
+        const text = await res.text();
+        // file:// often returns 200 with empty body for missing files; treat zero-length as missing.
+        if (!text.length) return null;
+        return text;
+      } catch { return null; }
+    }
+
+    // Pre-fetch titles from Markdown H1 headings; one pass per language
     async function loadPageTitles() {
-      const fetches = pages.filter(p => !p.title && !p.hidden).map(async (p) => {
-        try {
-          const res = await fetch(p.file);
-          if (!res.ok) return;
-          const text = await res.text();
-          // Match "# 00 — 项目概览" or "# 01 — 架构总览" patterns
-          const m = text.match(/^#\s+(.+)/m);
-          if (m) p.title = m[1].trim();
-        } catch {}
+      const fetches = pages.filter(p => !p.hidden).map(async (p) => {
+        p.titles = p.titles || {};
+        for (const lang of ['en', 'zh']) {
+          if (p.titles[lang]) continue;
+          const path = pageFile(p, lang);
+          if (!path) continue;
+          const text = await tryFetch(path);
+          if (!text) continue;
+          // Skip language-switcher banner on line 1 if present
+          const lines = text.split(/\r?\n/);
+          for (const line of lines) {
+            const m = line.match(/^#\s+(.+)/);
+            if (m) { p.titles[lang] = m[1].trim(); break; }
+          }
+        }
       });
       await Promise.all(fetches);
       buildNav();
+    }
+
+    function pageTitle(p, lang) {
+      if (!p.titles) return p.id;
+      return p.titles[lang] || p.titles.en || p.titles.zh || p.id;
     }
 
     mermaid.initialize({
@@ -486,6 +581,17 @@
       return `${resolved.pathname.replace(/^\//, '')}${resolved.search}${resolved.hash}`;
     }
 
+    // Resolve a markdown link to a page id, accepting both EN and ZH filenames.
+    function findPageByPath(path) {
+      // Match by language-neutral base (strip .zh.md or .md)
+      const baseFromPath = path.replace(/\.zh\.md$/, '').replace(/\.md$/, '');
+      return pages.find(p => {
+        if (p.file && p.file === path) return true;
+        if (p.base && p.base === baseFromPath) return true;
+        return false;
+      });
+    }
+
     const renderer = new marked.Renderer();
     renderer.code = function({ text, lang }) {
       if (lang === 'mermaid') {
@@ -498,7 +604,7 @@
       if (href && !/^(?:[a-z]+:|\/\/|#)/i.test(href)) {
         const resolvedHref = resolveRepoPath(currentPageFile, href);
         const resolvedPath = resolvedHref.split('#')[0];
-        const match = pages.find(p => p.file === resolvedPath);
+        const match = findPageByPath(resolvedPath);
         if (match) {
           return `<a href="#${match.id}" onclick="loadPage('${match.id}');return false;">${text}</a>`;
         }
@@ -511,6 +617,13 @@
     marked.setOptions({ renderer, gfm: true, breaks: false });
 
     function buildNav() {
+      const t = i18n[currentLang];
+      // Update site title and toggle highlight
+      document.getElementById('sidebarTitle').innerHTML = t.siteTitle;
+      document.querySelectorAll('.lang-toggle button').forEach(b =>
+        b.classList.toggle('active', b.dataset.lang === currentLang)
+      );
+
       const nav = document.getElementById('nav');
       let html = '';
       let sec = '';
@@ -519,14 +632,22 @@
         if (p.section && p.section !== sec) {
           if (sec) html += '</div>';
           sec = p.section;
-          html += `<div class="nav-group"><div class="nav-label">${sec}</div>`;
+          const label = t.sectionLabels[sec] || '';
+          html += `<div class="nav-group">${label ? `<div class="nav-label">${label}</div>` : ''}`;
         }
         const subClass = p.sub ? ' sub' : '';
-        const label = p.title || p.id;
-        html += `<a class="nav-item${subClass}" data-id="${p.id}" onclick="loadPage('${p.id}')">${label}</a>`;
+        html += `<a class="nav-item${subClass}" data-id="${p.id}" onclick="loadPage('${p.id}')">${pageTitle(p, currentLang)}</a>`;
       }
       if (sec) html += '</div>';
       nav.innerHTML = html;
+
+      // Re-highlight active nav item if a page is loaded
+      const activeId = location.hash.replace('#', '');
+      if (activeId) {
+        document.querySelectorAll('.nav-item').forEach(el =>
+          el.classList.toggle('active', el.dataset.id === activeId)
+        );
+      }
     }
 
     async function loadPage(id) {
@@ -537,29 +658,63 @@
         el.classList.toggle('active', el.dataset.id === id)
       );
       const content = document.getElementById('content');
-      content.innerHTML = '<div class="loading">Loading...</div>';
-      try {
-        const res = await fetch(page.file);
-        if (!res.ok) {
-          content.innerHTML = `<div class="empty-state"><h3>${page.title}</h3><p>尚未编写</p></div>`;
-          return;
+      const t = i18n[currentLang];
+      content.innerHTML = `<div class="loading">${t.loading}</div>`;
+
+      // Try preferred lang, fall back to the other lang
+      let path = pageFile(page, currentLang);
+      let text = path ? await tryFetch(path) : null;
+      let usedLang = currentLang;
+      if (!text && !page.file) {
+        const otherLang = currentLang === 'en' ? 'zh' : 'en';
+        const altPath = pageFile(page, otherLang);
+        const altText = await tryFetch(altPath);
+        if (altText) {
+          text = altText;
+          path = altPath;
+          usedLang = otherLang;
         }
-        const text = await res.text();
-        currentPageFile = page.file;
-        if (page.file.endsWith('.json')) {
+      }
+      if (!text) {
+        const title = pageTitle(page, currentLang);
+        content.innerHTML = `<div class="empty-state"><h3>${title}</h3><p>${t.notWritten}</p></div>`;
+        document.getElementById('toc').innerHTML = '';
+        return;
+      }
+
+      currentPageFile = path;
+      try {
+        if (path.endsWith('.json')) {
           const pretty = JSON.stringify(JSON.parse(text), null, 2);
-          content.innerHTML = `<h1>${page.title}</h1><pre><code class="language-json">${pretty.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code></pre>`;
+          const title = pageTitle(page, currentLang);
+          content.innerHTML = `<h1>${title}</h1><pre><code class="language-json">${pretty.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code></pre>`;
         } else {
-          content.innerHTML = marked.parse(text);
+          let html = '';
+          if (usedLang !== currentLang) {
+            html += `<div class="lang-fallback-notice">${t.fallbackNotice}</div>`;
+          }
+          html += marked.parse(text);
+          content.innerHTML = html;
           await mermaid.run({ nodes: content.querySelectorAll('.mermaid') });
         }
         window.scrollTo(0, 0);
         buildToc();
       } catch (e) {
-        content.innerHTML = `<div class="empty-state"><h3>加载失败</h3><p>${e.message}</p></div>`;
+        content.innerHTML = `<div class="empty-state"><h3>${t.loadFailed}</h3><p>${e.message}</p></div>`;
         document.getElementById('toc').innerHTML = '';
       }
       document.getElementById('sidebar').classList.remove('open');
+    }
+
+    function setLang(lang) {
+      if (lang !== 'en' && lang !== 'zh') return;
+      if (lang === currentLang) return;
+      currentLang = lang;
+      try { localStorage.setItem('lang', lang); } catch {}
+      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+      buildNav();
+      const id = location.hash.replace('#', '') || 'readme';
+      loadPage(id);
     }
 
     function buildToc() {
@@ -629,6 +784,7 @@
     }
 
     // Build nav with fallback titles first, then load real titles from files
+    document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
     buildNav();
     loadPageTitles().then(() => {
       loadPage(location.hash.replace('#','') || 'readme');

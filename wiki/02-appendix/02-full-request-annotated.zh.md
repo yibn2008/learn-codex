@@ -1,13 +1,13 @@
-> **Language**: **English** · [中文](02-full-request-annotated.zh.md)
+> **语言 / Language**: [English](02-full-request-annotated.md) · **中文**
 
-# 02 Appendix — Full API Request, Annotated
+# 02 附录 — 完整 API 请求逐段注解
 
-> This file is the complete Responses API request that Codex sent to the LLM during the 3rd (and final) turn of a session, presented field by field with annotations.
-> The data was captured through a custom `model_provider` (`supports_websockets=false`) plus a Node.js proxy. Codex v0.120.0, model gpt-5.4.
+> 本文件是第 3 轮（最后一轮）Codex 向 LLM 发送的完整 Responses API 请求，按字段逐段展示并注解。
+> 数据通过自定义 `model_provider` (`supports_websockets=false`) + Node.js 代理抓取。Codex v0.120.0, model gpt-5.4。
 
 ---
 
-## 1. Top-level request fields
+## 1. 请求顶层字段
 
 ```json
 {
@@ -20,17 +20,17 @@
 }
 ```
 
-| Field | Value | Description |
-|-------|-------|-------------|
-| `model` | `gpt-5.4` | The model in use |
-| `stream` | `True` | Always returns streaming responses |
-| `parallel_tool_calls` | `True` | Allows the model to invoke multiple tools in parallel within a single reply |
-| `reasoning.effort` | `high` | Reasoning intensity |
-| `reasoning.summary` | `?` | How reasoning summaries are emitted |
+| 字段 | 值 | 说明 |
+|------|-----|------|
+| `model` | `gpt-5.4` | 使用的模型 |
+| `stream` | `True` | 始终流式返回 |
+| `parallel_tool_calls` | `True` | 允许模型在单次回复中并行调用多个工具 |
+| `reasoning.effort` | `high` | 推理强度 |
+| `reasoning.summary` | `?` | 推理摘要输出方式 |
 
-## 2. instructions (system instructions, 14,732 characters)
+## 2. instructions（系统指令，14,732 字符）
 
-The agent's personality foundation. It is embedded at compile time from a markdown template and cannot be modified at runtime.
+Agent 的人格底座。编译时从 markdown 模板嵌入，运行时不可修改。
 
 ```
 You are Codex, a coding agent based on GPT-5. You and the user share the same workspace and collaborate to achieve the user's goals.
@@ -44,7 +44,7 @@ You are guided by these core values:
 - Clarity: You communicate reasoning explicitly and concretely, so decisions and tradeoffs are easy to evaluate upfront.
 - Pragmat
 
-... [about 13,000 characters omitted; see source for the full content] ...
+... [中间省略约 13,000 字符，完整内容见源码] ...
 
 tain formatting).
 - Before performing file edits of any kind, you provide updates explaining what edits you are making.
@@ -53,18 +53,18 @@ tain formatting).
 
 ```
 
-**Full source**: [protocol/src/prompts/base_instructions/default.md](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/prompts/base_instructions/default.md)
+**完整源码**: [protocol/src/prompts/base_instructions/default.md](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/prompts/base_instructions/default.md)
 
-## 3. tools (16 core tools)
+## 3. tools（16 个核心工具）
 
-Below are the 16 core tools that remain after filtering out 61 MCP plugin tools.
+以下为过滤掉 61 个 MCP 插件工具后的 16 个核心工具定义。
 
 ### 3.1 `exec_command` [function]
 
 > Runs a command in a PTY, returning output or a session ID for ongoing interaction.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `cmd` | string | Y | Shell command to execute. |
 | `justification` | string |  | Only set if sandbox_permissions is \"require_escalated\". |
 | `login` | boolean |  | Whether to run the shell with -l/-i semantics. Defaults to t |
@@ -80,8 +80,8 @@ Below are the 16 core tools that remain after filtering out 61 MCP plugin tools.
 
 > Writes characters to an existing unified exec session and returns recent output.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `chars` | string |  | Bytes to write to stdin (may be empty to poll). |
 | `max_output_tokens` | number |  | Maximum number of tokens to return. Excess output will be tr |
 | `session_id` | number | Y | Identifier of the running unified exec session. |
@@ -91,8 +91,8 @@ Below are the 16 core tools that remain after filtering out 61 MCP plugin tools.
 
 > Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models,
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `cursor` | string |  | Opaque cursor returned by a previous list_mcp_resources call |
 | `server` | string |  | Optional MCP server name. When omitted, lists resources from |
 
@@ -100,8 +100,8 @@ Below are the 16 core tools that remain after filtering out 61 MCP plugin tools.
 
 > Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that take
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `cursor` | string |  | Opaque cursor returned by a previous list_mcp_resource_templ |
 | `server` | string |  | Optional MCP server name. When omitted, lists resource templ |
 
@@ -109,8 +109,8 @@ Below are the 16 core tools that remain after filtering out 61 MCP plugin tools.
 
 > Read a specific resource from an MCP server given the server name and resource URI.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `server` | string | Y | MCP server name exactly as configured. Must match the 'serve |
 | `uri` | string | Y | Resource URI to read. Must be one of the URIs returned by li |
 
@@ -118,8 +118,8 @@ Below are the 16 core tools that remain after filtering out 61 MCP plugin tools.
 
 > Updates the task plan.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `explanation` | string |  |  |
 | `plan` | array | Y | The list of steps |
 
@@ -127,16 +127,16 @@ Below are the 16 core tools that remain after filtering out 61 MCP plugin tools.
 
 > Request user input for one to three short questions and wait for the response. This tool is only available in Plan mode.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `questions` | array | Y | Questions to show the user. Prefer 1 and do not exceed 3 |
 
 ### 3.8 `tool_suggest` [function]
 
 > # Tool suggestion discovery
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `action_type` | string | Y | Suggested action for the tool. Use "install" or "enable". |
 | `suggest_reason` | string | Y | Concise one-line user-facing reason why this tool can help w |
 | `tool_id` | string | Y | Connector or plugin id to suggest. Must be one of: figma@ope |
@@ -146,7 +146,7 @@ Below are the 16 core tools that remain after filtering out 61 MCP plugin tools.
 
 > Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.
 
-Free-form text format (no JSON Schema); the model emits the patch text directly.
+自由文本格式（非 JSON Schema），模型直接输出补丁文本。
 
 ### 3.10 `(unnamed)` [web_search]
 
@@ -154,14 +154,14 @@ Free-form text format (no JSON Schema); the model emits the patch text directly.
 
 > View a local image from the filesystem (only use if given a full filepath by the user, and the image isn't already attac
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `path` | string | Y | Local filesystem path to an image file |
 
 ### 3.12 `spawn_agent` [function]
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `agent_type` | string |  | Optional type name for the new agent. If omitted, `default`  |
 | `fork_context` | boolean |  | When true, fork the current thread history into the new agen |
 | `items` | array |  | Structured input items. Use this to pass explicit mentions ( |
@@ -173,8 +173,8 @@ Free-form text format (no JSON Schema); the model emits the patch text directly.
 
 > Send a message to an existing agent. Use interrupt=true to redirect work immediately. You should reuse the agent by send
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `interrupt` | boolean |  | When true, stop the agent's current task and handle this imm |
 | `items` | array |  | Structured input items. Use this to pass explicit mentions ( |
 | `message` | string |  | Legacy plain-text message to send to the agent. Use either m |
@@ -184,16 +184,16 @@ Free-form text format (no JSON Schema); the model emits the patch text directly.
 
 > Resume a previously closed agent by id so it can receive send_input and wait_agent calls.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `id` | string | Y | Agent id to resume. |
 
 ### 3.15 `wait_agent` [function]
 
 > Wait for agents to reach a final status. Completed statuses may include the agent's final message. Returns empty status 
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `targets` | array | Y | Agent ids to wait on. Pass multiple ids to wait for whicheve |
 | `timeout_ms` | number |  | Optional timeout in milliseconds. Defaults to 30000, min 100 |
 
@@ -201,27 +201,27 @@ Free-form text format (no JSON Schema); the model emits the patch text directly.
 
 > Close an agent and any open descendants when they are no longer needed, and return the target agent's previous status be
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
 | `target` | string | Y | Agent id to close (from spawn_agent). |
 
-## 4. input (10 messages, shown one by one)
+## 4. input（10 条消息，逐条展示）
 
-This is the full `input` array of the 3rd-turn request. The first 3 messages are fixed context that appears every turn; the remaining 7 are the conversation history accumulated over the previous two turns.
+这是第 3 轮请求的完整 input 数组。前 3 条是每轮都有的固定上下文，后 7 条是前两轮累积的对话历史。
 
-### 4.1 Message [0]: `message`
-**Role**: `developer`
+### 4.1 消息 [0]: `message`
+**角色**: `developer`
 
-**Block 1** (input_text, 607 characters):
+**Block 1** (input_text, 607 字符):
 
 ```
 <permissions instructions>
 Filesystem sandboxing defines which files can be read or written. `sandbox_mode` is `workspace-write`: The sandbox permits reading files, and editing files in `cwd` and `writable_roots`. Editing files in other directories r
 
-... [truncated; 607 characters total] ...
+... [省略，共 607 字符] ...
 ```
 
-**Block 2** (input_text, 646 characters):
+**Block 2** (input_text, 646 字符):
 
 ```
 <apps_instructions>
@@ -229,20 +229,20 @@ Filesystem sandboxing defines which files can be read or written. `sandbox_mode`
 Apps (Connectors) can be explicitly triggered in user messages in the format `[$app-name](app://{connector_id})`. Apps can also be implicitly triggered as long as the context suggests usage of available apps.
 
 
-... [truncated; 646 characters total] ...
+... [省略，共 646 字符] ...
 ```
 
-**Block 3** (input_text, 7666 characters):
+**Block 3** (input_text, 7666 字符):
 
 ```
 <skills_instructions>
 ## Skills
 A skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and file path so you can open the source for 
 
-... [truncated; 7666 characters total] ...
+... [省略，共 7666 字符] ...
 ```
 
-**Block 4** (input_text, 1213 characters):
+**Block 4** (input_text, 1213 字符):
 
 ```
 <plugins_instructions>
@@ -251,15 +251,15 @@ A plugin is a local bundle of skills, MCP servers, and apps. Below is the list o
 ### Available plugins
 - `GitHub`: Inspect repositories, triage pull requests a
 
-... [truncated; 1213 characters total] ...
+... [省略，共 1213 字符] ...
 ```
 
 ---
 
-### 4.2 Message [1]: `message`
-**Role**: `user`
+### 4.2 消息 [1]: `message`
+**角色**: `user`
 
-**Block 1** (input_text, 3453 characters):
+**Block 1** (input_text, 3453 字符):
 
 ```
 # AGENTS.md instructions for /Users/zoujie.wu/workspace/learn-codex
@@ -272,10 +272,10 @@ A plugin is a local bundle of skills, MCP servers, and apps. Below is the list o
 - **禁止产生 Unicode 乱码**：输出中文内容时，必须确保所有中文字符完整输出，不得出现 U+FFFD 替换字符（显示为 `���`）。这类乱码是中文字符在输出时被截断造成的。
 - 每次生成或修改包含中文的文件后，应使用 `grep -rn '���'
 
-... [truncated; 3453 characters total] ...
+... [省略，共 3453 字符] ...
 ```
 
-**Block 2** (input_text, 197 characters):
+**Block 2** (input_text, 197 字符):
 
 ```
 <environment_context>
@@ -288,10 +288,10 @@ A plugin is a local bundle of skills, MCP servers, and apps. Below is the list o
 
 ---
 
-### 4.3 Message [2]: `message`
-**Role**: `user`
+### 4.3 消息 [2]: `message`
+**角色**: `user`
 
-**Block 1** (input_text, 85 characters):
+**Block 1** (input_text, 85 字符):
 
 ```
 Create a file called /tmp/todomvc3.html with a minimal TODOMVC page using HTML CSS JS
@@ -299,16 +299,16 @@ Create a file called /tmp/todomvc3.html with a minimal TODOMVC page using HTML C
 
 ---
 
-### 4.4 Message [3]: `reasoning`
+### 4.4 消息 [3]: `reasoning`
 
-The model's internal reasoning trace (encrypted; not exposed externally).
+模型内部推理过程（加密，对外不可见）。
 
 ---
 
-### 4.5 Message [4]: `message`
-**Role**: `assistant`
+### 4.5 消息 [4]: `message`
+**角色**: `assistant`
 
-**Block 1** (output_text, 84 characters):
+**Block 1** (output_text, 84 字符):
 
 ```
 正在创建 `/tmp/todomvc3.html`，我会直接写成单文件的最小 TodoMVC：包含 HTML 结构、基础样式和原生 JS 的新增/切换/删除/筛选逻辑。
@@ -316,9 +316,9 @@ The model's internal reasoning trace (encrypted; not exposed externally).
 
 ---
 
-### 4.6 Message [5]: `custom_tool_call`
+### 4.6 消息 [5]: `custom_tool_call`
 
-**Tool**: `apply_patch`
+**工具**: `apply_patch`
 
 ```
 *** Begin Patch
@@ -335,12 +335,12 @@ The model's internal reasoning trace (encrypted; not exposed externally).
 +      --panel: #ffffff;
 +  
 
-... [truncated; 7887 characters total] ...
+... [省略，共 7887 字符] ...
 ```
 
 ---
 
-### 4.7 Message [6]: `custom_tool_call_output`
+### 4.7 消息 [6]: `custom_tool_call_output`
 
 ```
 Exit code: 0
@@ -353,10 +353,10 @@ A /tmp/todomvc3.html
 
 ---
 
-### 4.8 Message [7]: `message`
-**Role**: `assistant`
+### 4.8 消息 [7]: `message`
+**角色**: `assistant`
 
-**Block 1** (output_text, 36 characters):
+**Block 1** (output_text, 36 字符):
 
 ```
 文件已写入。我在做一次快速校验，确认它已落盘且是可直接打开的单文件页面。
@@ -364,9 +364,9 @@ A /tmp/todomvc3.html
 
 ---
 
-### 4.9 Message [8]: `function_call`
+### 4.9 消息 [8]: `function_call`
 
-**Tool**: `exec_command`
+**工具**: `exec_command`
 
 ```json
 {
@@ -379,7 +379,7 @@ A /tmp/todomvc3.html
 
 ---
 
-### 4.10 Message [9]: `function_call_output`
+### 4.10 消息 [9]: `function_call_output`
 
 ```
 Chunk ID: e080db
@@ -395,9 +395,9 @@ Output:
 
 ---
 
-## 5. response (LLM reply)
+## 5. response（LLM 回复）
 
-**Final reply**:
+**最终回复**:
 
 ```
 已创建 `/tmp/todomvc3.html`。
@@ -405,7 +405,7 @@ Output:
 这是一个单文件的最小 TodoMVC 页面，包含基础的 HTML/CSS/JS，支持新增任务、切换完成状态、按 `All/Active/Completed` 筛选，以及 `Clear completed`。直接用浏览器打开这个文件即可。
 ```
 
-**Token usage**:
+**Token 使用**:
 
 ```json
 {
@@ -423,4 +423,4 @@ Output:
 
 ---
 
-**Back to**: [02 — Prompts and tools](../02-prompt-and-tools.md)
+**返回**: [02 — 提示词与工具解析](../02-prompt-and-tools.zh.md)

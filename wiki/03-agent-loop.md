@@ -1,114 +1,116 @@
-# 03 — Agent Loop 深度剖析
+> **Language**: **English** · [中文](03-agent-loop.zh.md)
 
-> 本章从源码层面剖析 Codex 的核心控制循环——`run_turn()` 函数。它是 Agent 从接收用户输入到输出最终回复的完整执行引擎，约 500 行代码，管理着采样、工具执行、上下文压缩和 Hook 系统的协调。
+# 03 — Agent Loop deep dive
 
-## 1. run_turn() 的控制流全景
+> This chapter dissects Codex's core control loop — the `run_turn()` function — at the source level. It is the complete execution engine that takes the agent from "user input received" to "final response emitted". At roughly 500 lines of code, it coordinates sampling, tool execution, context compaction, and the hook system.
 
-`run_turn()` 是整个 Agent 的主循环函数。它的核心是一个 `loop {}`，每次迭代完成一轮「采样 → 工具执行 → 检查是否继续」的流程。
+## 1. The big picture of run_turn()
+
+`run_turn()` is the main loop function for the entire agent. At its heart sits a `loop {}`, and each iteration completes one round of "sample → run tools → decide whether to continue".
 
 ```mermaid
 graph TD
-    START[Turn 开始] --> PRE{需要预压缩?}
-    PRE -->|是| COMPACT_PRE[执行预压缩]
-    PRE -->|否| INIT
-    COMPACT_PRE --> INIT[初始化 ModelClientSession]
+    START[Turn starts] --> PRE{Pre-compaction needed?}
+    PRE -->|yes| COMPACT_PRE[Run pre-compaction]
+    PRE -->|no| INIT
+    COMPACT_PRE --> INIT[Initialize ModelClientSession]
 
-    INIT --> LOOP[loop 开始]
-    LOOP --> DRAIN[排空待处理输入<br/>drain pending input]
-    DRAIN --> INPUT[从 history 构建<br/>采样输入]
+    INIT --> LOOP[loop start]
+    LOOP --> DRAIN[Drain pending input<br/>drain pending input]
+    DRAIN --> INPUT[Build sampling input<br/>from history]
     INPUT --> SAMPLE[run_sampling_request]
 
     SAMPLE --> FOLLOWUP{needs_follow_up?}
 
-    FOLLOWUP -->|true + Token 超限| MID_COMPACT[mid-turn 压缩]
+    FOLLOWUP -->|true + token limit hit| MID_COMPACT[mid-turn compaction]
     MID_COMPACT --> LOOP
 
-    FOLLOWUP -->|true + Token 未超限| LOOP
+    FOLLOWUP -->|true + token limit not hit| LOOP
 
-    FOLLOWUP -->|false| HOOKS{执行 stop hooks}
-    HOOKS -->|hook 要求继续| LOOP
-    HOOKS -->|正常结束| END[Turn 结束]
+    FOLLOWUP -->|false| HOOKS{Run stop hooks}
+    HOOKS -->|hook says continue| LOOP
+    HOOKS -->|normal end| END[Turn ends]
 ```
 
-**源码**: [codex.rs:6011+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6011)
+**Source**: [codex.rs:6011+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6011)
 
-### 伪代码总览
+### Pseudocode overview
 
 ```
 async fn run_turn(sess, turn_context, input) {
-    // ── 预处理 ──
+    // ── Pre-processing ──
     if should_pre_compact() { run_auto_compact(); }
-    let client_session = ModelClientSession::new();  // 整个 Turn 复用
+    let client_session = ModelClientSession::new();  // reused across the whole Turn
 
-    // ── 主循环 ──
+    // ── Main loop ──
     loop {
-        drain_pending_input(&sess);                  // 1. 排空 mailbox / 用户注入
-        let input = sess.history.clone_for_prompt(); // 2. 构建采样输入
+        drain_pending_input(&sess);                  // 1. drain mailbox / user-injected input
+        let input = sess.history.clone_for_prompt(); // 2. build sampling input
 
-        let result = run_sampling_request(           // 3. 执行采样
+        let result = run_sampling_request(           // 3. run sampling
             &sess, &turn_context, input, &client_session
         ).await;
         //   → built_tools() → build_prompt() → stream()
-        //   → 处理事件流 → handle_output_item_done() → drain_in_flight()
+        //   → process event stream → handle_output_item_done() → drain_in_flight()
 
-        let needs_follow_up = result.needs_follow_up // 4. 判断是否继续
+        let needs_follow_up = result.needs_follow_up // 4. decide whether to continue
             || sess.has_pending_input();
         let token_limit_reached = total_tokens >= compact_limit;
 
         if needs_follow_up && token_limit_reached {
-            run_auto_compact();                      // mid-turn 压缩
+            run_auto_compact();                      // mid-turn compaction
             continue;
         }
-        if needs_follow_up { continue; }             // 工具结果已入 history
+        if needs_follow_up { continue; }             // tool results already in history
 
-        match run_stop_hooks().await {               // 5. Stop hooks
-            Continue => continue,                    // hook 要求继续
-            Stop => break,                           // 正常结束
+        match run_stop_hooks().await {               // 5. stop hooks
+            Continue => continue,                    // hook asks to continue
+            Stop => break,                           // normal end
         }
     }
     emit_event(TurnComplete { usage });
 }
 ```
 
-### 关键点
+### Key takeaways
 
-1. **单一 loop**：不是递归，是一个平坦的无限循环，每次迭代 = 一轮 LLM 采样
-2. **每次都重新构建工具列表**：`built_tools()` 在每轮采样前调用，因为可用工具可能变化
-3. **ModelClientSession 在整个 Turn 内复用**：WebSocket 连接不会每轮重建
+1. **A single loop**: this is not recursion — it is a flat infinite loop, where each iteration equals one round of LLM sampling.
+2. **Tool list is rebuilt every iteration**: `built_tools()` is called before every sampling call, because the set of available tools may change.
+3. **ModelClientSession is reused for the entire Turn**: the WebSocket connection is not rebuilt every iteration.
 
-## 2. 循环内部：每次迭代做什么
+## 2. Inside the loop: what each iteration does
 
-### 2.1 排空待处理输入
+### 2.1 Drain pending input
 
 ```rust
-// codex.rs — 排空待处理输入
+// codex.rs — drain pending input
 if can_drain_pending_input {
-    // 从 mailbox（子 Agent 通信）和 pending_input 中取出排队的消息
-    // 追加到 history
+    // Pull queued messages from the mailbox (sub-agent communication) and pending_input,
+    // then append them to history.
 }
 ```
 
-**源码**: [codex.rs:6240-6254](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6240-L6254)
+**Source**: [codex.rs:6240-6254](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6240-L6254)
 
-这一步处理两种场景：
-- 子 Agent 通过 mailbox 发来的消息
-- 用户在 Turn 执行过程中通过 `steer_input()` 注入的新输入
+This step handles two scenarios:
+- Messages coming in from a sub-agent through the mailbox
+- New input the user injected mid-Turn via `steer_input()`
 
-### 2.2 构建采样输入
+### 2.2 Build the sampling input
 
 ```rust
 let sampling_request_input = sess.state.lock().history.clone_for_prompt();
 ```
 
-**源码**: [codex.rs:6298-6301](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6298-L6301)
+**Source**: [codex.rs:6298-6301](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6298-L6301)
 
-从 `ContextManager` 中克隆当前完整的对话历史，作为本轮 LLM 请求的 `input`。
+We clone the full conversation history out of the `ContextManager` and use it as the `input` for this round's LLM request.
 
-### 2.3 调用 run_sampling_request()
+### 2.3 Call run_sampling_request()
 
-这是每次迭代的核心——构建 Prompt、发送 LLM 请求、处理流式响应。详见第 3 节。
+This is the core of each iteration — building the Prompt, sending the LLM request, and processing the streaming response. See section 3 for details.
 
-### 2.4 检查是否继续
+### 2.4 Decide whether to continue
 
 ```rust
 let model_needs_follow_up = sampling_request_output.needs_follow_up;
@@ -117,98 +119,98 @@ let needs_follow_up = model_needs_follow_up || has_pending_input;
 let token_limit_reached = total_usage_tokens >= auto_compact_limit;
 ```
 
-**源码**: [codex.rs:6328-6371](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6328-L6371)
+**Source**: [codex.rs:6328-6371](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6328-L6371)
 
-| 条件 | 动作 |
-|------|------|
-| `needs_follow_up = true` + Token 未超限 | 直接 `continue`，进入下一轮采样 |
-| `needs_follow_up = true` + Token 超限 | 先执行 mid-turn 压缩，再 `continue` |
-| `needs_follow_up = false` | 进入 stop hooks 阶段 |
+| Condition | Action |
+|-----------|--------|
+| `needs_follow_up = true` + token limit not reached | `continue` directly into the next sampling round |
+| `needs_follow_up = true` + token limit reached | Run mid-turn compaction first, then `continue` |
+| `needs_follow_up = false` | Move on to the stop-hooks phase |
 
-`needs_follow_up` 为 true 的原因：
-- 模型返回了工具调用（最常见）
-- 用户在 Turn 中途注入了新输入
-- mailbox 中有子 Agent 的消息
+Why `needs_follow_up` becomes true:
+- The model returned a tool call (most common)
+- The user injected new input mid-Turn
+- The mailbox has a message from a sub-agent
 
-### 2.5 Stop Hooks 阶段
+### 2.5 The stop-hooks phase
 
-当 `needs_follow_up = false` 时，Turn **不会立即结束**，而是先执行 stop hooks：
+When `needs_follow_up = false`, the Turn does **not** end immediately — it first runs the stop hooks:
 
 ```rust
 let hook_result = run_stop_hooks(&sess, &turn_context).await;
 match hook_result {
     StopHookOutcome::Continue => {
-        // Hook 要求继续——注入新 prompt，continue 回循环
+        // Hook asks to continue — inject a new prompt and continue the loop.
         stop_hook_active = true;
         continue;
     }
     StopHookOutcome::Stop => {
-        // 正常结束
+        // Normal end.
         break;
     }
 }
 ```
 
-> Stop hooks 是用户自定义的收尾逻辑（通过 `config.toml` 中的 hooks 配置）。它们可以在模型给出最终回复后检查结果，决定是否要求 Agent 继续工作。这是一个容易被忽略但很重要的控制流分支。
+> Stop hooks are user-defined wrap-up logic (configured via `hooks` in `config.toml`). They can inspect the result after the model has produced its final reply and decide whether to ask the agent to keep working. This is an easily overlooked but important branch of the control flow.
 
-**源码**: [codex.rs:6373-6415](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6373-L6415)
+**Source**: [codex.rs:6373-6415](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6373-L6415)
 
-## 3. run_sampling_request()：单次 LLM 调用
+## 3. run_sampling_request(): a single LLM call
 
-每次循环迭代调用一次 `run_sampling_request()`，它负责从构建请求到处理响应的完整流程：
+Every loop iteration calls `run_sampling_request()` once. It owns the full pipeline from building the request to processing the response:
 
 ```mermaid
 graph TD
-    A[built_tools<br/>构建 ToolRouter] --> B[get_base_instructions<br/>获取系统指令]
-    B --> C[build_prompt<br/>组装 Prompt]
-    C --> D[创建 ToolCallRuntime]
-    D --> E[try_run_sampling_request<br/>含重试逻辑]
+    A[built_tools<br/>build ToolRouter] --> B[get_base_instructions<br/>fetch system instructions]
+    B --> C[build_prompt<br/>assemble Prompt]
+    C --> D[Create ToolCallRuntime]
+    D --> E[try_run_sampling_request<br/>with retry logic]
 
-    E --> F{结果}
-    F -->|成功| G[返回 SamplingRequestResult]
-    F -->|可重试错误| H[指数退避重试]
+    E --> F{Result}
+    F -->|success| G[Return SamplingRequestResult]
+    F -->|retryable error| H[Exponential backoff retry]
     H --> E
-    F -->|WebSocket 失败| I[降级到 HTTP SSE]
+    F -->|WebSocket failure| I[Fall back to HTTP SSE]
     I --> E
-    F -->|不可重试错误| J[返回错误]
+    F -->|non-retryable error| J[Return error]
 ```
 
-### 3.1 构建工具路由
+### 3.1 Build the tool router
 
 ```rust
 let router = built_tools(sess, turn_context, &input, ...).await?;
 ```
 
-**源码**: [codex.rs:6935-7004](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6935-L7004)
+**Source**: [codex.rs:6935-7004](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6935-L7004)
 
-`built_tools()` 每次采样请求都重新构建 `ToolRouter`，因为：
-- MCP 服务器可能新增/移除工具
-- Skills/Plugins 可能热重载
-- 动态工具可能变化
+`built_tools()` rebuilds the `ToolRouter` for every sampling call because:
+- MCP servers may add or remove tools
+- Skills/Plugins may hot-reload
+- Dynamic tools may change
 
-### 3.2 组装 Prompt
+### 3.2 Assemble the Prompt
 
 ```rust
 let prompt = build_prompt(input, router, turn_context, base_instructions);
 ```
 
-**源码**: [codex.rs:6719-6749](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6719-L6749)
+**Source**: [codex.rs:6719-6749](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6719-L6749)
 
 ```rust
 // client_common.rs:25-45
 pub struct Prompt {
-    pub input: Vec<ResponseItem>,        // 对话历史
-    pub tools: Vec<ToolSpec>,            // 工具定义
-    pub parallel_tool_calls: bool,       // 是否允许并行调用
-    pub base_instructions: BaseInstructions,  // 系统指令
+    pub input: Vec<ResponseItem>,        // conversation history
+    pub tools: Vec<ToolSpec>,            // tool definitions
+    pub parallel_tool_calls: bool,       // whether parallel calls are allowed
+    pub base_instructions: BaseInstructions,  // system instructions
     pub personality: Option<Personality>,
     pub output_schema: Option<Value>,
 }
 ```
 
-**源码**: [client_common.rs:25-45](https://github.com/openai/codex/blob/main/codex-rs/core/src/client_common.rs#L25-L45), [codex.rs:6759+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6759)
+**Source**: [client_common.rs:25-45](https://github.com/openai/codex/blob/main/codex-rs/core/src/client_common.rs#L25-L45), [codex.rs:6759+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6759)
 
-### 3.3 发送请求与传输层
+### 3.3 Sending the request and the transport layer
 
 ```rust
 pub async fn stream(&mut self, prompt, ...) -> Result<ResponseStream> {
@@ -220,56 +222,56 @@ pub async fn stream(&mut self, prompt, ...) -> Result<ResponseStream> {
             }
         }
     }
-    self.stream_responses_api(...).await  // HTTP SSE 回退
+    self.stream_responses_api(...).await  // HTTP SSE fallback
 }
 ```
 
-传输优先级：WebSocket → HTTP SSE。WebSocket 失败后会自动降级，且在同一 Turn 内记住降级状态，后续请求直接走 HTTP。
+Transport priority: WebSocket → HTTP SSE. After a WebSocket failure the client falls back automatically and remembers the fallback state for the rest of the Turn, so subsequent requests go straight to HTTP.
 
-**源码**: [client.rs:1434-1482](https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs#L1434-L1482)
+**Source**: [client.rs:1434-1482](https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs#L1434-L1482)
 
-### 3.4 重试逻辑
+### 3.4 Retry logic
 
-`try_run_sampling_request()` 包含指数退避重试：
+`try_run_sampling_request()` includes exponential-backoff retry:
 
-| 错误类型 | 处理 |
-|---------|------|
-| Stream 断连 | 指数退避重试（最多 5 次） |
-| WebSocket 失败 | 降级到 HTTP SSE |
-| `ContextWindowExceeded` | 终止，需要压缩 |
-| `UsageLimitReached` | 终止，配额用完 |
-| 其他 | 终止，返回错误 |
+| Error type | Behavior |
+|------------|----------|
+| Stream disconnect | Exponential-backoff retry (up to 5 times) |
+| WebSocket failure | Fall back to HTTP SSE |
+| `ContextWindowExceeded` | Abort — compaction needed |
+| `UsageLimitReached` | Abort — quota exhausted |
+| Other | Abort and return the error |
 
-**源码**: [codex.rs:6800-6933](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6800-L6933)
+**Source**: [codex.rs:6800-6933](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6800-L6933)
 
-## 4. 流式响应处理：try_run_sampling_request() 内部
+## 4. Streaming response handling: inside try_run_sampling_request()
 
-LLM 返回的是一个 SSE 事件流。`try_run_sampling_request()` 逐事件处理：
+The LLM returns an SSE event stream. `try_run_sampling_request()` processes events one by one:
 
 ```
-Response 事件流:
-  ResponseEvent::Created          → 记录 response_id
-  ResponseEvent::OutputItemAdded  → 处理新项（reasoning / message / tool_call）
-  ResponseEvent::OutputTextDelta  → 流式文本增量 → 发送 AgentMessageDelta 事件
-  ResponseEvent::OutputItemDone   → handle_output_item_done() ← 关键函数
-  ResponseEvent::Completed        → 返回 SamplingRequestResult
+Response event stream:
+  ResponseEvent::Created          → record response_id
+  ResponseEvent::OutputItemAdded  → handle the new item (reasoning / message / tool_call)
+  ResponseEvent::OutputTextDelta  → streaming text delta → emit AgentMessageDelta event
+  ResponseEvent::OutputItemDone   → handle_output_item_done() ← key function
+  ResponseEvent::Completed        → return SamplingRequestResult
 ```
 
-### handle_output_item_done()：工具调用的关键判定
+### handle_output_item_done(): the key tool-call decision
 
-这个函数决定了 `needs_follow_up`：
+This function decides `needs_follow_up`:
 
 ```rust
 fn handle_output_item_done(item: ResponseItem) -> OutputItemResult {
     if item.is_tool_call() {
-        // 创建工具执行 Future，由 ToolCallRuntime 调度
+        // Build a tool-execution Future, scheduled by ToolCallRuntime.
         OutputItemResult {
             needs_follow_up: true,
             tool_future: Some(tool_call_runtime.handle_tool_call(item)),
             ..
         }
     } else {
-        // 纯文本/reasoning，不需要后续
+        // Plain text / reasoning — no follow-up needed.
         OutputItemResult {
             needs_follow_up: false,
             tool_future: None,
@@ -279,79 +281,79 @@ fn handle_output_item_done(item: ResponseItem) -> OutputItemResult {
 }
 ```
 
-工具调用的 Future 会被收集到 `in_flight` 列表中，在响应流结束后通过 `drain_in_flight()` 统一 await：
+Tool-call Futures are collected into the `in_flight` list and awaited together via `drain_in_flight()` after the response stream ends:
 
 ```rust
-// 响应流完成后
+// After the response stream completes
 for future in in_flight_futures {
     let result = future.await;
-    // 工具输出追加到 history
+    // Append tool output to history.
     sess.record_items(result.to_response_item());
 }
 ```
 
-**源码**: [stream_events_utils.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/stream_events_utils.rs), [codex.rs:7565-7570](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L7565-L7570)
+**Source**: [stream_events_utils.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/stream_events_utils.rs), [codex.rs:7565-7570](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L7565-L7570)
 
-## 5. 自动压缩：Token 窗口管理
+## 5. Auto-compaction: managing the token window
 
-对话历史会不断增长，最终超出模型的上下文窗口。Codex 在两个时机触发压缩：
+Conversation history grows continuously and eventually exceeds the model's context window. Codex triggers compaction at two points:
 
-| 时机 | 触发条件 | 行为 |
-|------|---------|------|
-| **Pre-turn** | Turn 开始前检查上一轮 Token 使用 | 在首次采样前压缩 |
-| **Mid-turn** | 循环中 `token_limit_reached && needs_follow_up` | 压缩后继续循环 |
+| Timing | Trigger condition | Behavior |
+|--------|------------------|----------|
+| **Pre-turn** | Check token usage from the last round before the Turn starts | Compact before the first sampling call |
+| **Mid-turn** | `token_limit_reached && needs_follow_up` mid-loop | Compact, then keep looping |
 
-两种压缩实现：
+There are two compaction implementations:
 
-| 方式 | 实现 | 说明 |
-|------|------|------|
-| **本地压缩** | 调用同一模型生成摘要 | 使用 `SUMMARIZATION_PROMPT` 模板 |
-| **远程压缩** | 调用 OpenAI 专用 API | 更高效，服务端支持时优先使用 |
+| Approach | Implementation | Notes |
+|----------|----------------|-------|
+| **Local compaction** | Call the same model to produce a summary | Uses the `SUMMARIZATION_PROMPT` template |
+| **Remote compaction** | Call a dedicated OpenAI API | More efficient; preferred when the server supports it |
 
-压缩后，`ContextManager` 的 `history_version` 递增，WebSocket 连接重置（因为服务端的 prompt cache 失效）。
+After compaction, the `ContextManager`'s `history_version` is bumped and the WebSocket connection is reset (because the server-side prompt cache is invalidated).
 
-**源码**: [compact.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs), [compact_remote.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact_remote.rs)
+**Source**: [compact.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact.rs), [compact_remote.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/compact_remote.rs)
 
-## 6. TaskKind：不只有 Regular Turn
+## 6. TaskKind: more than just a regular Turn
 
-`run_turn()` 不只处理普通用户对话。它通过 `TaskKind` 区分多种任务类型：
+`run_turn()` does not only handle ordinary user conversation. It uses `TaskKind` to distinguish several task types:
 
-| TaskKind | 触发方式 | 说明 |
-|----------|---------|------|
-| `Regular` | 用户输入 `Op::UserTurn` | 最常见——用户发消息，Agent 回复 |
-| `Compact` | 用户手动 `Op::Compact` | 手动触发上下文压缩 |
-| `Review` | 用户 `Op::Review` | 代码审查模式 |
-| `Undo` | 用户 `Op::Undo` | 撤销上一次 Turn |
-| `UserShell` | 用户 `Op::RunUserShellCommand` | 用户直接执行 shell 命令（不经过 LLM） |
-| `GhostSnapshot` | 内部触发 | 后台快照，用于上下文恢复 |
+| TaskKind | Trigger | Notes |
+|----------|---------|-------|
+| `Regular` | User-issued `Op::UserTurn` | The most common — user sends a message, agent replies |
+| `Compact` | User-issued `Op::Compact` | Manually trigger context compaction |
+| `Review` | User-issued `Op::Review` | Code-review mode |
+| `Undo` | User-issued `Op::Undo` | Undo the previous Turn |
+| `UserShell` | User-issued `Op::RunUserShellCommand` | User runs a shell command directly (LLM is bypassed) |
+| `GhostSnapshot` | Internally triggered | Background snapshot used for context recovery |
 
-每种 TaskKind 都会创建对应的 `RunningTask`，挂载到 `ActiveTurn` 上：
+Each TaskKind creates a corresponding `RunningTask`, attached to the `ActiveTurn`:
 
 ```rust
 pub struct RunningTask {
-    pub done: Arc<Notify>,              // 完成信号
-    pub kind: TaskKind,                 // 任务类型
-    pub cancellation_token: CancellationToken,  // 取消令牌
-    pub turn_context: Arc<TurnContext>,  // 配置快照
-    pub handle: Arc<AbortOnDropHandle<()>>,  // 异步任务句柄
+    pub done: Arc<Notify>,              // completion signal
+    pub kind: TaskKind,                 // task type
+    pub cancellation_token: CancellationToken,  // cancellation token
+    pub turn_context: Arc<TurnContext>,  // configuration snapshot
+    pub handle: Arc<AbortOnDropHandle<()>>,  // async task handle
 }
 ```
 
-> **知识点 — `Arc<T>`**: `Arc`（Atomic Reference Counted）是 Rust 的原子引用计数智能指针，允许多个线程安全地共享同一份数据。当所有 `Arc` 引用都被释放时，数据才会被回收。这里 `RunningTask` 的多个字段用 `Arc` 包装，是因为它们需要在异步任务、取消逻辑等多个并发上下文中共享访问。
+> **Tip — `Arc<T>`**: `Arc` (Atomic Reference Counted) is Rust's atomic reference-counted smart pointer, allowing multiple threads to share the same data safely. The data is reclaimed only when the last `Arc` reference is dropped. Several fields of `RunningTask` are wrapped in `Arc` because they need to be shared across multiple concurrent contexts — async tasks, cancellation logic, and so on.
 
-**源码**: [state/turn.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/state/turn.rs), [tasks/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tasks/mod.rs)
+**Source**: [state/turn.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/state/turn.rs), [tasks/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tasks/mod.rs)
 
-## 7. 本章小结
+## 7. Chapter summary
 
-| 概念 | 说明 | 源码 |
-|------|------|------|
-| **run_turn()** | 外层主循环，管理采样-工具-压缩-hooks 的迭代 | [codex.rs:6011+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6011) |
-| **run_sampling_request()** | 单次采样：构建工具 → 组装 Prompt → 发送请求 → 重试 | [codex.rs:6800+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6800) |
-| **try_run_sampling_request()** | 流式响应处理 + 工具调用判定 + drain_in_flight | [codex.rs:7592+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L7592) |
-| **handle_output_item_done()** | 判定 needs_follow_up，创建工具执行 Future | [stream_events_utils.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/stream_events_utils.rs) |
-| **Stop Hooks** | Turn 收尾阶段，hooks 可阻止结束并注入新 prompt | [codex.rs:6373-6415](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6373-L6415) |
-| **TaskKind** | 6 种任务类型：Regular / Compact / Review / Undo / UserShell / GhostSnapshot | [tasks/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tasks/mod.rs) |
+| Concept | Description | Source |
+|---------|-------------|--------|
+| **run_turn()** | Outer main loop; manages iterations of sample-tool-compact-hooks | [codex.rs:6011+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6011) |
+| **run_sampling_request()** | A single sampling round: build tools → assemble Prompt → send request → retry | [codex.rs:6800+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6800) |
+| **try_run_sampling_request()** | Streaming response handling + tool-call decision + drain_in_flight | [codex.rs:7592+](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L7592) |
+| **handle_output_item_done()** | Decides needs_follow_up; creates the tool-execution Future | [stream_events_utils.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/stream_events_utils.rs) |
+| **Stop Hooks** | Turn wrap-up phase; hooks can prevent termination and inject a new prompt | [codex.rs:6373-6415](https://github.com/openai/codex/blob/main/codex-rs/core/src/codex.rs#L6373-L6415) |
+| **TaskKind** | 6 task types: Regular / Compact / Review / Undo / UserShell / GhostSnapshot | [tasks/mod.rs](https://github.com/openai/codex/blob/main/codex-rs/core/src/tasks/mod.rs) |
 
 ---
 
-**上一章**: [02 — 提示词与工具解析](02-prompt-and-tools.md) | **下一章**: [04 — 工具系统设计](04-tool-system.md)
+**Previous**: [02 — Prompt and tool resolution](02-prompt-and-tools.md) | **Next**: [04 — Tool system design](04-tool-system.md)

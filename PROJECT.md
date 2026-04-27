@@ -37,9 +37,11 @@ learn-codex/
 ├── PROJECT.md              ← 本文件：项目总目标（供 review agent 了解全局）
 ├── PROGRESS.md             ← 任务管理：章节状态、每轮记录、中间产物追踪
 ├── wiki/
-│   ├── README.md           ← Wiki 首页 / 导航中心
-│   ├── 00-project-overview.md    ← 章节文件（编号递增）
-│   ├── 01-architecture-overview.md
+│   ├── README.md           ← Wiki 首页（英文，默认）
+│   ├── README.zh.md        ← Wiki 首页（中文）
+│   ├── 00-project-overview.md      ← 英文章节（默认）
+│   ├── 00-project-overview.zh.md   ← 中文章节
+│   ├── 01-architecture-overview.md / .zh.md
 │   ├── ...
 │   └── images/             ← 图表资源
 └── diagrams/               ← 中间分析产物
